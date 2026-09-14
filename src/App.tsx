@@ -409,6 +409,16 @@ function InventoryApp({ client, household, email, onDisconnect }: { client: Supa
     }
   }
 
+  async function setQuantity(item: InventoryItem, value: number) {
+    const next = Math.max(0, value);
+    setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, quantity: next } : entry));
+    const { error: updateError } = await client.from("inventory_items").update({ quantity: next }).eq("id", item.id);
+    if (updateError) {
+      setToast("没能更新数量，请重试");
+      void loadItems();
+    }
+  }
+
   async function deleteItem(item: InventoryItem) {
     if (!window.confirm(`确认删除「${item.name}」？库存为 0 时不用删除，它会自动保留。`)) return;
     const { error: deleteError } = await client.from("inventory_items").delete().eq("id", item.id);
@@ -444,7 +454,7 @@ function InventoryApp({ client, household, email, onDisconnect }: { client: Supa
         ) : tab === "add" ? (
           <AddInventory client={client} household={household} items={items} onSaved={() => { void loadItems(); setToast("已放进库存"); setTab("inventory"); }} />
         ) : (
-          <Inventory items={items} onChangeQuantity={changeQuantity} onDelete={deleteItem} />
+          <Inventory items={items} onChangeQuantity={changeQuantity} onSetQuantity={setQuantity} onDelete={deleteItem} />
         )}
       </main>
 
@@ -662,7 +672,7 @@ function AddInventory({ client, household, items, onSaved }: { client: SupabaseC
   );
 }
 
-function Inventory({ items, onChangeQuantity, onDelete }: { items: InventoryItem[]; onChangeQuantity: (item: InventoryItem, delta: number) => void; onDelete: (item: InventoryItem) => void }) {
+function Inventory({ items, onChangeQuantity, onSetQuantity, onDelete }: { items: InventoryItem[]; onChangeQuantity: (item: InventoryItem, delta: number) => void; onSetQuantity: (item: InventoryItem, value: number) => void; onDelete: (item: InventoryItem) => void }) {
   const [zone, setZone] = useState<StorageZone | "all">("all");
   const [activeTags, setActiveTags] = useState<string[]>([]);
   const [query, setQuery] = useState("");
@@ -697,15 +707,15 @@ function Inventory({ items, onChangeQuantity, onDelete }: { items: InventoryItem
         <div className="inventory-empty"><Boxes size={34} /><h2>这里还没有库存</h2><p>{items.length ? "换个储存区、标签或关键词试试。" : "从“添加”开始记录家里的东西。"}</p></div>
       ) : (
         <div className="inventory-list">
-          {filtered.map((item) => <InventoryRow key={item.id} item={item} onChangeQuantity={onChangeQuantity} onDelete={onDelete} />)}
+          {filtered.map((item) => <InventoryRow key={item.id} item={item} onChangeQuantity={onChangeQuantity} onSetQuantity={onSetQuantity} onDelete={onDelete} />)}
         </div>
       )}
-      <p className="retention-note"><Archive size={16} /> 数量归零后记录仍会保留，只有手动删除才会消失。</p>
+      <p className="retention-note"><Archive size={16} /> 点击数量可以直接输入克数、毫升数或小数；归零后记录仍会保留。</p>
     </div>
   );
 }
 
-function InventoryRow({ item, onChangeQuantity, onDelete }: { item: InventoryItem; onChangeQuantity: (item: InventoryItem, delta: number) => void; onDelete: (item: InventoryItem) => void }) {
+function InventoryRow({ item, onChangeQuantity, onSetQuantity, onDelete }: { item: InventoryItem; onChangeQuantity: (item: InventoryItem, delta: number) => void; onSetQuantity: (item: InventoryItem, value: number) => void; onDelete: (item: InventoryItem) => void }) {
   const zone = ZONES.find((entry) => entry.key === item.storage_zone)!;
   const Icon = zone.icon;
   const expiry = item.expires_on ? daysUntil(item.expires_on) : null;
@@ -716,18 +726,63 @@ function InventoryRow({ item, onChangeQuantity, onDelete }: { item: InventoryIte
         <div className="row-name-line"><h2>{item.name}</h2>{Number(item.quantity) === 0 && <span className="status-chip out">已用完</span>}{expiry !== null && expiry < 0 && <span className="status-chip expired">已过期</span>}{expiry !== null && expiry >= 0 && expiry <= 7 && <span className="status-chip soon">{expiry === 0 ? "今天到期" : `${expiry} 天后到期`}</span>}</div>
         <div className="row-meta"><span>{item.expires_on ? formatDate(item.expires_on) : "未设置保质期"}</span>{item.tags?.map((tag) => <span className="mini-tag" key={tag}>{tag}</span>)}</div>
       </div>
-      <QuantityControl item={item} onChange={onChangeQuantity} large />
+      <QuantityControl item={item} onChange={onChangeQuantity} onSet={onSetQuantity} large />
       <button className="delete-button" onClick={() => onDelete(item)} aria-label={`删除 ${item.name}`}><Trash2 size={17} /></button>
     </article>
   );
 }
 
-function QuantityControl({ item, onChange, large = false }: { item: InventoryItem; onChange: (item: InventoryItem, delta: number) => void; large?: boolean }) {
+function QuantityControl({ item, onChange, onSet, large = false }: { item: InventoryItem; onChange: (item: InventoryItem, delta: number) => void; onSet?: (item: InventoryItem, value: number) => void; large?: boolean }) {
+  const [draft, setDraft] = useState(() => formatQuantity(item.quantity));
+
+  useEffect(() => {
+    setDraft(formatQuantity(item.quantity));
+  }, [item.quantity]);
+
+  function parsedDraft() {
+    const parsed = Number(draft);
+    return Number.isFinite(parsed) ? Math.max(0, parsed) : Number(item.quantity);
+  }
+
+  function setAbsolute(value: number) {
+    const next = Math.max(0, value);
+    setDraft(formatQuantity(next));
+    if (next !== Number(item.quantity)) onSet?.(item, next);
+  }
+
+  function commitDraft() {
+    setAbsolute(parsedDraft());
+  }
+
   return (
     <div className={`quantity-control ${large ? "large" : ""}`} aria-label={`${item.name}数量`}>
-      <button onClick={() => onChange(item, -1)} disabled={Number(item.quantity) <= 0} aria-label="减少一个"><Minus size={16} /></button>
-      <span><strong>{formatQuantity(item.quantity)}</strong><small>{item.unit}</small></span>
-      <button onClick={() => onChange(item, 1)} aria-label="增加一个"><Plus size={16} /></button>
+      <button onClick={() => large && onSet ? setAbsolute(parsedDraft() - 1) : onChange(item, -1)} disabled={parsedDraft() <= 0} aria-label="减少一个单位"><Minus size={16} /></button>
+      {large && onSet ? (
+        <div className="quantity-input-wrap">
+          <input
+            type="number"
+            inputMode="decimal"
+            min="0"
+            step="any"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={commitDraft}
+            onFocus={(event) => event.currentTarget.select()}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.currentTarget.blur();
+              if (event.key === "Escape") {
+                setDraft(formatQuantity(item.quantity));
+                event.currentTarget.blur();
+              }
+            }}
+            aria-label={`直接设置 ${item.name} 的数量`}
+          />
+          <small>{item.unit}</small>
+        </div>
+      ) : (
+        <span><strong>{formatQuantity(item.quantity)}</strong><small>{item.unit}</small></span>
+      )}
+      <button onClick={() => large && onSet ? setAbsolute(parsedDraft() + 1) : onChange(item, 1)} aria-label="增加一个单位"><Plus size={16} /></button>
     </div>
   );
 }
