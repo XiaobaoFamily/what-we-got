@@ -80,6 +80,10 @@ export const SHELF_LIFE_SOURCES = {
   "fda-raw-pet-food": {
     name: "FDA Raw Pet Food Safety",
     url: "https://www.fda.gov/animal-veterinary/animal-health-literacy/get-facts-raw-pet-food-diets-can-be-dangerous-you-and-your-pet"
+  },
+  "household-custom": {
+    name: "家庭自定义规则",
+    url: ""
   }
 } as const;
 
@@ -942,6 +946,7 @@ export interface ShelfLifeSearchOptions {
   storageZone?: StorageZone;
   conditions?: FoodCondition[];
   limit?: number;
+  rules?: ShelfLifeRule[];
 }
 
 export interface ShelfLifeMatch {
@@ -973,7 +978,7 @@ export function searchShelfLifeRules(query: string, options: ShelfLifeSearchOpti
   const requestedConditions = options.conditions ?? [];
   const matches: ShelfLifeMatch[] = [];
 
-  for (const rule of SHELF_LIFE_RULES) {
+  for (const rule of options.rules ?? SHELF_LIFE_RULES) {
     const guidance = options.storageZone ? rule.storage[options.storageZone] ?? null : null;
     if (options.storageZone && !guidance) continue;
 

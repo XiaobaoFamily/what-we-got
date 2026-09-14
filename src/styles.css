@@ -71,6 +71,8 @@ h1, h2, p { margin-top: 0; }
   transition: transform .15s ease, background .15s ease;
 }
 .primary-button:hover { background: #0b2d21; transform: translateY(-1px); }
+.secondary-button { min-height: 46px; padding: 0 18px; border: 1px solid #cbd1c8; border-radius: 12px; color: var(--ink); background: var(--white); font-weight: 750; }
+.secondary-button:hover { background: #edf0eb; }
 .icon-button { border: 0; background: transparent; width: 40px; height: 40px; padding: 0; display: grid; place-items: center; border-radius: 11px; }
 .icon-button:hover { background: rgba(23, 53, 43, .07); }
 .text-button { border: 0; background: transparent; padding: 8px; color: var(--green-2); font-weight: 700; }
@@ -303,6 +305,53 @@ h1, h2, p { margin-top: 0; }
 .inventory-empty p { font-size: .85rem; }
 .retention-note { margin: 18px 0 0; color: #738179; font-size: .78rem; display: flex; align-items: center; gap: 7px; }
 
+.rules-heading { align-items: center; }
+.add-rule-button { min-height: 46px; }
+.rules-migration-error { margin-bottom: 20px; padding: 15px 17px; border: 1px solid #efc7bd; border-radius: 15px; color: #8f4032; background: #fff0ec; display: flex; align-items: flex-start; gap: 10px; }
+.rules-migration-error > svg { flex: 0 0 auto; margin-top: 2px; }
+.rules-migration-error > span { display: grid; gap: 4px; }
+.rules-migration-error small { line-height: 1.5; overflow-wrap: anywhere; }
+.rule-editor { margin-bottom: 24px; padding: 24px; border: 1px solid #c9d7ce; border-radius: 22px; background: var(--white); box-shadow: 0 12px 34px rgba(23,53,43,.06); display: grid; gap: 18px; }
+.rule-editor > header { padding-bottom: 16px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: flex-start; }
+.rule-editor header span { display: grid; gap: 3px; }
+.rule-editor header small { color: var(--muted); }
+.rule-editor h2 { margin: 0; font-size: 1.35rem; }
+.rule-editor-grid { display: grid; gap: 12px; }
+.rule-editor-grid.two { grid-template-columns: 1fr 1fr; }
+.rule-editor-grid.three { grid-template-columns: repeat(3, 1fr); }
+.condition-editor { margin: 0; padding: 0; border: 0; }
+.condition-editor legend { margin-bottom: 9px; font-size: .91rem; font-weight: 650; }
+.condition-editor legend span { margin-left: 5px; color: var(--muted); font-size: .72rem; font-weight: 500; }
+.condition-editor > div { display: flex; flex-wrap: wrap; gap: 7px; }
+.condition-editor button { min-height: 33px; padding: 0 10px; border: 1px solid #d2d7d0; border-radius: 999px; background: #f7f8f4; display: inline-flex; align-items: center; gap: 5px; font-size: .75rem; font-weight: 700; }
+.condition-editor button.selected { border-color: var(--green-2); color: white; background: var(--green-2); }
+.rule-flags { display: flex; flex-wrap: wrap; gap: 18px; }
+.rule-flags label { grid-template-columns: auto 1fr; align-items: center; gap: 8px; font-size: .82rem; }
+.rule-flags input { width: 18px; min-height: 18px; accent-color: var(--green-2); }
+.rule-editor-actions { padding-top: 4px; display: flex; justify-content: flex-end; gap: 9px; }
+.rule-editor-actions .primary-button { min-height: 46px; }
+.rules-toolbar { margin-bottom: 17px; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.rules-toolbar .search-field { flex: 0 1 320px; }
+.rules-list { display: grid; gap: 10px; }
+.rule-card { min-height: 118px; padding: 16px; border: 1px solid var(--line); border-radius: 18px; background: var(--white); display: grid; grid-template-columns: 70px minmax(0, 1fr) auto; align-items: center; gap: 16px; }
+.rule-zone { width: 68px; min-height: 68px; border-radius: 15px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; font-size: .7rem; font-weight: 800; }
+.rule-zone.amber { color: #745413; background: #ffedb7; }
+.rule-zone.blue { color: #2b667d; background: #dceef3; }
+.rule-zone.indigo { color: #414c8d; background: #e2e5f7; }
+.rule-card-main { min-width: 0; }
+.rule-title-line { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.rule-title-line h2 { margin: 0; font-size: 1rem; }
+.rule-title-line > span { padding: 3px 7px; border-radius: 6px; color: #28664f; background: #e2f1e9; font-size: .65rem; font-weight: 800; }
+.rule-meta { margin-top: 7px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; color: var(--muted); font-size: .72rem; }
+.rule-meta strong { color: #8a5417; font-size: .8rem; }
+.rule-meta span { padding: 2px 6px; border-radius: 5px; background: #f0f2ed; }
+.rule-aliases, .rule-advice { margin: 7px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #718078; font-size: .72rem; }
+.rule-advice { color: #52645b; }
+.rule-card-actions { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+.rule-card-actions button { min-height: 34px; padding: 0 10px; border: 1px solid #d3d8d1; border-radius: 10px; color: #4f6258; background: #f8f9f6; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: .72rem; font-weight: 750; }
+.rule-card-actions button:hover { background: #e9eee9; }
+.rule-card-actions button.rule-remove { border-color: #ead3cc; color: #965042; background: #fff8f5; }
+
 .modal-backdrop { position: fixed; z-index: 50; inset: 0; padding: 16px; background: rgba(13,31,25,.35); backdrop-filter: blur(4px); display: flex; justify-content: flex-end; }
 .settings-panel { width: min(100%, 420px); height: 100%; padding: 28px; border-radius: 24px; background: var(--white); box-shadow: -16px 0 48px rgba(13,31,25,.16); animation: slideIn .22s ease-out; }
 @keyframes slideIn { from { opacity: 0; transform: translateX(18px); } }
@@ -336,7 +385,7 @@ h1, h2, p { margin-top: 0; }
   .dashboard-grid { grid-template-columns: 1fr; }
   .app-header { grid-template-columns: 1fr auto; }
   .desktop-tabs { display: none; }
-  .mobile-tabs { position: fixed; z-index: 25; left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); height: 68px; padding: 5px; border: 1px solid rgba(205,211,202,.85); border-radius: 19px; background: rgba(255,254,251,.93); box-shadow: 0 12px 34px rgba(20,50,39,.17); backdrop-filter: blur(18px); display: grid; grid-template-columns: repeat(3, 1fr); }
+  .mobile-tabs { position: fixed; z-index: 25; left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); height: 68px; padding: 5px; border: 1px solid rgba(205,211,202,.85); border-radius: 19px; background: rgba(255,254,251,.93); box-shadow: 0 12px 34px rgba(20,50,39,.17); backdrop-filter: blur(18px); display: grid; grid-template-columns: repeat(4, 1fr); }
   .mobile-tabs button { border: 0; border-radius: 14px; background: transparent; color: #74817a; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: .68rem; font-weight: 750; }
   .mobile-tabs button.active { color: #fff; background: var(--green); }
   .page { padding-bottom: 115px; }
@@ -400,6 +449,19 @@ h1, h2, p { margin-top: 0; }
   .delete-button { grid-column: 3; grid-row: 1; }
   .row-name-line h2 { max-width: 150px; }
   .retention-note { align-items: flex-start; }
+  .rules-heading { align-items: center; }
+  .add-rule-button { min-height: 42px; padding: 0 13px; }
+  .rule-editor { padding: 18px 15px; border-radius: 18px; }
+  .rule-editor-grid.two, .rule-editor-grid.three { grid-template-columns: 1fr; }
+  .rule-editor-actions { position: sticky; bottom: 86px; padding: 10px 0; background: var(--white); }
+  .rule-editor-actions > button { flex: 1; }
+  .rules-toolbar { align-items: stretch; flex-direction: column; gap: 10px; }
+  .rules-toolbar .search-field { flex: auto; width: 100%; }
+  .rule-card { padding: 13px; grid-template-columns: 54px minmax(0, 1fr); align-items: start; gap: 11px; }
+  .rule-zone { width: 52px; min-height: 60px; }
+  .rule-card-actions { grid-column: 2; flex-direction: row; justify-content: flex-end; }
+  .rule-card-actions button { flex: 0 1 auto; }
+  .rule-aliases, .rule-advice { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .modal-backdrop { padding: 8px; }
   .settings-panel { padding: 24px 20px; border-radius: 20px; }
 }

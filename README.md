@@ -14,7 +14,7 @@ pnpm dev
 ## 初始化 Supabase
 
 1. 新建一个 Supabase 项目。
-2. 打开 SQL Editor，运行 [`supabase/migrations/202609140001_initial_inventory.sql`](supabase/migrations/202609140001_initial_inventory.sql)。
+2. 打开 SQL Editor，按文件名顺序运行 [`supabase/migrations`](supabase/migrations) 中的 SQL 文件。已经初始化过的家庭只需要运行尚未执行的新 migration。
 3. 在 Authentication → Providers 中启用 Email；按需要决定是否要求邮箱验证。
 4. 如果启用了邮箱验证，在 Authentication → URL Configuration 中把 Site URL 设为部署后的 GitHub Pages 地址，并把 `http://localhost:5173` 加入本地开发的 Redirect URLs。
 5. 打开 PWA，填写项目的 Project URL 和 anon / publishable key。不要填写 `service_role` key。
@@ -41,3 +41,5 @@ pnpm dev
 [`src/data/shelfLifeRules.ts`](src/data/shelfLifeRules.ts) 包含第一版常见食物规则、中文别名、常温/冷藏/冷冻期限、保存建议、风险等级和来源链接。添加库存时，应用会按名称和储存区域匹配规则，展示保存建议，并允许用户一键采用按较短期限计算出的建议日期。
 
 规则主要参考 USDA FoodKeeper、FoodSafety.gov 冷藏冷冻表和 FDA 保存建议。冷藏期限同时涉及食品安全和品质；冷冻期限通常表示最佳品质。包装上的保存说明和明确日期始终优先，无法确认安全时应丢弃而不是品尝。
+
+“规则”Tab 中的修改会写入 `household_shelf_life_rules`，供同一家庭的所有成员同步使用。修改内置规则会创建家庭覆盖版本，可以随时恢复默认；新增的规则则只属于当前家庭。

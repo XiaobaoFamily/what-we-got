@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import {
   Archive,
+  BookOpenText,
   Boxes,
   CalendarDays,
   Cat,
@@ -19,8 +20,10 @@ import {
   LogOut,
   Minus,
   PackagePlus,
+  Pencil,
   Plus,
   Refrigerator,
+  RotateCcw,
   Search,
   Settings,
   Snowflake,
@@ -33,6 +36,12 @@ import {
   calculateSuggestedExpiry,
   formatShelfLife,
   searchShelfLifeRules,
+  SHELF_LIFE_RULES,
+  type FoodCategory,
+  type FoodCondition,
+  type FoodRiskLevel,
+  type ShelfLifeGuidance,
+  type ShelfLifeRule,
   type ShelfLifeStartPoint
 } from "./data/shelfLifeRules";
 import {
@@ -42,7 +51,7 @@ import {
   saveSupabaseConfig,
   validateSupabaseConfig
 } from "./lib/supabase";
-import type { Household, InventoryItem, StorageZone, SupabaseConfig } from "./types";
+import type { Household, HouseholdShelfLifeRule, InventoryItem, StorageZone, SupabaseConfig } from "./types";
 
 const DEFAULT_TAGS = [
   "小宝",
@@ -63,7 +72,7 @@ const ZONES: Array<{ key: StorageZone; label: string; icon: typeof Archive; colo
   { key: "frozen", label: "冷冻", icon: Snowflake, color: "indigo" }
 ];
 
-type Tab = "dashboard" | "add" | "inventory";
+type Tab = "dashboard" | "add" | "inventory" | "rules";
 
 function App() {
   const [config, setConfig] = useState<SupabaseConfig | null>(() => loadSupabaseConfig());
@@ -373,6 +382,9 @@ function HouseholdSetup({ client, onComplete, onDisconnect }: { client: Supabase
 function InventoryApp({ client, household, email, onDisconnect }: { client: SupabaseClient; household: Household; email: string; onDisconnect: () => void }) {
   const [tab, setTab] = useState<Tab>("dashboard");
   const [items, setItems] = useState<InventoryItem[]>([]);
+  const [ruleOverrides, setRuleOverrides] = useState<HouseholdShelfLifeRule[]>([]);
+  const [rulesLoading, setRulesLoading] = useState(true);
+  const [rulesError, setRulesError] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
@@ -390,6 +402,22 @@ function InventoryApp({ client, household, email, onDisconnect }: { client: Supa
     else setItems((data ?? []) as InventoryItem[]);
   }, [client, household.id]);
 
+  const loadRuleOverrides = useCallback(async () => {
+    const { data, error: queryError } = await client
+      .from("household_shelf_life_rules")
+      .select("*")
+      .eq("household_id", household.id)
+      .order("name", { ascending: true });
+    setRulesLoading(false);
+    if (queryError) {
+      setRulesError(queryError.message);
+      setRuleOverrides([]);
+    } else {
+      setRulesError("");
+      setRuleOverrides((data ?? []) as HouseholdShelfLifeRule[]);
+    }
+  }, [client, household.id]);
+
   useEffect(() => {
     void loadItems();
     const channel = client
@@ -398,6 +426,20 @@ function InventoryApp({ client, household, email, onDisconnect }: { client: Supa
       .subscribe();
     return () => { void client.removeChannel(channel); };
   }, [client, household.id, loadItems]);
+
+  useEffect(() => {
+    void loadRuleOverrides();
+    const channel = client
+      .channel(`shelf-life-rules-${household.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "household_shelf_life_rules", filter: `household_id=eq.${household.id}` }, () => void loadRuleOverrides())
+      .subscribe();
+    return () => { void client.removeChannel(channel); };
+  }, [client, household.id, loadRuleOverrides]);
+
+  const effectiveShelfLifeRules = useMemo(
+    () => buildEffectiveShelfLifeRules(ruleOverrides),
+    [ruleOverrides]
+  );
 
   useEffect(() => {
     if (!toast) return;
@@ -440,7 +482,8 @@ function InventoryApp({ client, household, email, onDisconnect }: { client: Supa
   const tabs: Array<{ id: Tab; label: string; icon: typeof Archive }> = [
     { id: "dashboard", label: "看板", icon: LayoutDashboard },
     { id: "add", label: "添加", icon: PackagePlus },
-    { id: "inventory", label: "库存", icon: Boxes }
+    { id: "inventory", label: "库存", icon: Boxes },
+    { id: "rules", label: "规则", icon: BookOpenText }
   ];
 
   return (
@@ -460,9 +503,19 @@ function InventoryApp({ client, household, email, onDisconnect }: { client: Supa
         {loading ? <ContentLoader /> : tab === "dashboard" ? (
           <Dashboard items={items} onChangeQuantity={changeQuantity} onGoInventory={() => setTab("inventory")} />
         ) : tab === "add" ? (
-          <AddInventory client={client} household={household} items={items} onSaved={() => { void loadItems(); setToast("已放进库存"); setTab("inventory"); }} />
-        ) : (
+          <AddInventory client={client} household={household} items={items} shelfLifeRules={effectiveShelfLifeRules} onSaved={() => { void loadItems(); setToast("已放进库存"); setTab("inventory"); }} />
+        ) : tab === "inventory" ? (
           <Inventory items={items} onChangeQuantity={changeQuantity} onSetQuantity={setQuantity} onDelete={deleteItem} />
+        ) : (
+          <RulesManager
+            client={client}
+            household={household}
+            overrides={ruleOverrides}
+            loading={rulesLoading}
+            loadError={rulesError}
+            onChanged={loadRuleOverrides}
+            onToast={setToast}
+          />
         )}
       </main>
 
@@ -545,7 +598,7 @@ function DashboardList({ title, subtitle, icon, tone, items, empty, onChangeQuan
   );
 }
 
-function AddInventory({ client, household, items, onSaved }: { client: SupabaseClient; household: Household; items: InventoryItem[]; onSaved: () => void }) {
+function AddInventory({ client, household, items, shelfLifeRules, onSaved }: { client: SupabaseClient; household: Household; items: InventoryItem[]; shelfLifeRules: ShelfLifeRule[]; onSaved: () => void }) {
   const [existingId, setExistingId] = useState("");
   const [itemName, setItemName] = useState("");
   const [zone, setZone] = useState<StorageZone>("pantry");
@@ -569,8 +622,8 @@ function AddInventory({ client, household, items, onSaved }: { client: SupabaseC
   }, [existing]);
 
   const shelfLifeMatches = useMemo(
-    () => searchShelfLifeRules(itemName, { storageZone: zone, limit: 4 }),
-    [itemName, zone]
+    () => searchShelfLifeRules(itemName, { storageZone: zone, limit: 4, rules: shelfLifeRules }),
+    [itemName, shelfLifeRules, zone]
   );
   const selectedMatch = shelfLifeMatches.find((match) => match.rule.id === selectedRuleId) ?? shelfLifeMatches[0];
   const selectedGuidance = selectedMatch?.guidance ?? null;
@@ -767,6 +820,307 @@ function AddInventory({ client, household, items, onSaved }: { client: SupabaseC
   );
 }
 
+type RuleEntry = {
+  key: string;
+  baseRuleId: string | null;
+  overrideId: string | null;
+  rule: ShelfLifeRule;
+  storageZone: StorageZone;
+  guidance: ShelfLifeGuidance;
+  customized: boolean;
+  custom: boolean;
+};
+
+type RuleDraft = {
+  overrideId: string | null;
+  baseRuleId: string | null;
+  name: string;
+  aliases: string;
+  category: FoodCategory;
+  conditions: FoodCondition[];
+  riskLevel: FoodRiskLevel;
+  storageZone: StorageZone;
+  minDays: string;
+  maxDays: string;
+  startFrom: ShelfLifeStartPoint;
+  qualityOnly: boolean;
+  labelFirst: boolean;
+  advice: string;
+  warning: string;
+};
+
+const FOOD_CATEGORY_OPTIONS: Array<{ value: FoodCategory; label: string }> = [
+  { value: "prepared", label: "熟食 / 预制菜" },
+  { value: "meat", label: "肉类" },
+  { value: "seafood", label: "海鲜" },
+  { value: "eggs-dairy", label: "蛋奶 / 豆制品" },
+  { value: "produce", label: "果蔬" },
+  { value: "pantry", label: "常温干货" },
+  { value: "pet-food", label: "小宝食物" }
+];
+
+const FOOD_CONDITION_OPTIONS: Array<{ value: FoodCondition; label: string }> = [
+  { value: "unopened", label: "未开封" },
+  { value: "opened", label: "已开封" },
+  { value: "raw", label: "生鲜" },
+  { value: "cooked", label: "熟食" },
+  { value: "prepared", label: "已制作" },
+  { value: "whole", label: "完整" },
+  { value: "cut", label: "已切开" },
+  { value: "ripe", label: "已成熟" },
+  { value: "homemade", label: "自制" },
+  { value: "thawed", label: "已解冻" }
+];
+
+function RulesManager({ client, household, overrides, loading, loadError, onChanged, onToast }: {
+  client: SupabaseClient;
+  household: Household;
+  overrides: HouseholdShelfLifeRule[];
+  loading: boolean;
+  loadError: string;
+  onChanged: () => Promise<void>;
+  onToast: (message: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [zone, setZone] = useState<StorageZone | "all">("all");
+  const [draft, setDraft] = useState<RuleDraft | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
+  const entries = useMemo(() => buildRuleManagerEntries(overrides), [overrides]);
+  const filteredEntries = entries.filter((entry) => {
+    const zoneMatch = zone === "all" || entry.storageZone === zone;
+    const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
+    const queryMatch = !normalizedQuery || [entry.rule.name, ...entry.rule.aliases]
+      .some((name) => name.toLocaleLowerCase("zh-CN").includes(normalizedQuery));
+    return zoneMatch && queryMatch;
+  });
+
+  function beginAddRule() {
+    setFormError("");
+    setDraft({
+      overrideId: null,
+      baseRuleId: null,
+      name: "",
+      aliases: "",
+      category: "pantry",
+      conditions: [],
+      riskLevel: "medium",
+      storageZone: "pantry",
+      minDays: "7",
+      maxDays: "7",
+      startFrom: "purchased",
+      qualityOnly: false,
+      labelFirst: false,
+      advice: "密封保存，并标注日期。",
+      warning: ""
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function beginEditRule(entry: RuleEntry) {
+    setFormError("");
+    setDraft({
+      overrideId: entry.overrideId,
+      baseRuleId: entry.baseRuleId,
+      name: entry.rule.name,
+      aliases: entry.rule.aliases.join("，"),
+      category: entry.rule.category,
+      conditions: entry.rule.conditions,
+      riskLevel: entry.rule.riskLevel,
+      storageZone: entry.storageZone,
+      minDays: entry.guidance.minDays === null ? "" : String(entry.guidance.minDays),
+      maxDays: entry.guidance.maxDays === null ? "" : String(entry.guidance.maxDays),
+      startFrom: entry.guidance.startFrom,
+      qualityOnly: Boolean(entry.guidance.qualityOnly),
+      labelFirst: Boolean(entry.guidance.labelFirst),
+      advice: entry.guidance.advice.join("\n"),
+      warning: entry.guidance.warning ?? ""
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function toggleDraftCondition(condition: FoodCondition) {
+    if (!draft) return;
+    setDraft({
+      ...draft,
+      conditions: draft.conditions.includes(condition)
+        ? draft.conditions.filter((value) => value !== condition)
+        : [...draft.conditions, condition]
+    });
+  }
+
+  async function saveRule(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!draft) return;
+
+    const minBlank = draft.minDays.trim() === "";
+    const maxBlank = draft.maxDays.trim() === "";
+    if (!draft.name.trim()) {
+      setFormError("请填写食品名称。");
+      return;
+    }
+    if (minBlank !== maxBlank) {
+      setFormError("最短和最长天数需要同时填写，或者同时留空并按包装日期。");
+      return;
+    }
+    const minDays = minBlank ? null : Number(draft.minDays);
+    const maxDays = maxBlank ? null : Number(draft.maxDays);
+    if (minDays !== null && (!Number.isInteger(minDays) || !Number.isInteger(maxDays) || minDays < 0 || maxDays! < minDays)) {
+      setFormError("请输入有效的整数天数，且最长天数不能短于最短天数。");
+      return;
+    }
+
+    const aliases = uniqueTrimmedLines(draft.aliases, /[，,\n]/);
+    const advice = uniqueTrimmedLines(draft.advice, /\n/);
+    const payload = {
+      household_id: household.id,
+      base_rule_id: draft.baseRuleId,
+      name: draft.name.trim(),
+      aliases,
+      category: draft.category,
+      conditions: draft.conditions,
+      risk_level: draft.riskLevel,
+      storage_zone: draft.storageZone,
+      min_days: minDays,
+      max_days: maxDays,
+      start_from: minDays === null ? "package-date" : draft.startFrom,
+      quality_only: draft.qualityOnly,
+      label_first: minDays === null ? true : draft.labelFirst,
+      advice,
+      warning: draft.warning.trim() || null
+    };
+
+    setSaving(true);
+    setFormError("");
+    const matchingOverride = draft.baseRuleId
+      ? overrides.find((rule) => rule.base_rule_id === draft.baseRuleId && rule.storage_zone === draft.storageZone)
+      : null;
+    const targetId = draft.overrideId ?? matchingOverride?.id;
+    const result = targetId
+      ? await client.from("household_shelf_life_rules").update(payload).eq("id", targetId).eq("household_id", household.id)
+      : await client.from("household_shelf_life_rules").insert(payload);
+    setSaving(false);
+
+    if (result.error) {
+      setFormError(result.error.message);
+      return;
+    }
+    await onChanged();
+    setDraft(null);
+    onToast(draft.baseRuleId ? "家庭规则已更新" : "自定义规则已保存");
+  }
+
+  async function removeRule(entry: RuleEntry) {
+    if (!entry.overrideId) return;
+    const action = entry.custom ? "删除这条家庭规则" : "恢复这条内置规则的默认值";
+    if (!window.confirm(`确认${action}？`)) return;
+    const { error } = await client
+      .from("household_shelf_life_rules")
+      .delete()
+      .eq("id", entry.overrideId)
+      .eq("household_id", household.id);
+    if (error) {
+      onToast("规则更新失败，请重试");
+      return;
+    }
+    if (draft?.overrideId === entry.overrideId) setDraft(null);
+    await onChanged();
+    onToast(entry.custom ? "自定义规则已删除" : "已恢复内置默认值");
+  }
+
+  return (
+    <div className="page rules-page">
+      <div className="page-heading rules-heading">
+        <div><span className="eyebrow">家庭自己的保存习惯</span><h1>保质期规则</h1></div>
+        <button className="primary-button add-rule-button" onClick={beginAddRule}><Plus size={18} />新增规则</button>
+      </div>
+
+      {loadError && (
+        <div className="rules-migration-error">
+          <CircleAlert size={19} />
+          <span><strong>规则数据库尚未准备好</strong><small>请在 Supabase SQL Editor 运行 `202609140002_household_shelf_life_rules.sql`。{loadError}</small></span>
+        </div>
+      )}
+
+      {draft && (
+        <form className="rule-editor" onSubmit={saveRule}>
+          <header>
+            <span><small>{draft.baseRuleId ? "修改后只影响当前家庭" : "添加当前家庭专用规则"}</small><h2>{draft.baseRuleId ? "编辑规则" : "新增规则"}</h2></span>
+            <button type="button" className="icon-button" onClick={() => setDraft(null)} aria-label="关闭规则编辑"><X size={19} /></button>
+          </header>
+
+          <div className="rule-editor-grid two">
+            <label>食品名称<input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="例如：自制猫饭" maxLength={80} required /></label>
+            <label>别名 <span className="optional">用逗号分隔</span><input value={draft.aliases} onChange={(event) => setDraft({ ...draft, aliases: event.target.value })} placeholder="例如：猫咪鲜食，熟猫饭" /></label>
+          </div>
+
+          <div className="rule-editor-grid three">
+            <label>类别<select value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value as FoodCategory })}>{FOOD_CATEGORY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+            <label>储存区域<select value={draft.storageZone} disabled={Boolean(draft.baseRuleId)} onChange={(event) => setDraft({ ...draft, storageZone: event.target.value as StorageZone })}>{ZONES.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}</select></label>
+            <label>风险提示<select value={draft.riskLevel} onChange={(event) => setDraft({ ...draft, riskLevel: event.target.value as FoodRiskLevel })}><option value="low">品质参考</option><option value="medium">注意保存</option><option value="high">需注意安全</option></select></label>
+          </div>
+
+          <fieldset className="condition-editor">
+            <legend>食品状态 <span>可多选，帮助名称相近时准确匹配</span></legend>
+            <div>{FOOD_CONDITION_OPTIONS.map((option) => <button type="button" key={option.value} className={draft.conditions.includes(option.value) ? "selected" : ""} onClick={() => toggleDraftCondition(option.value)}>{option.label}{draft.conditions.includes(option.value) && <Check size={13} />}</button>)}</div>
+          </fieldset>
+
+          <div className="rule-editor-grid three duration-editor">
+            <label>最短天数<input type="number" min="0" step="1" value={draft.minDays} onChange={(event) => setDraft({ ...draft, minDays: event.target.value })} placeholder="留空则按包装" /></label>
+            <label>最长天数<input type="number" min="0" step="1" value={draft.maxDays} onChange={(event) => setDraft({ ...draft, maxDays: event.target.value })} placeholder="留空则按包装" /></label>
+            <label>从哪天开始<select value={draft.startFrom} disabled={!draft.minDays && !draft.maxDays} onChange={(event) => setDraft({ ...draft, startFrom: event.target.value as ShelfLifeStartPoint })}>{Object.entries(SHELF_LIFE_START_LABELS).map(([value, label]) => <option key={value} value={value}>{label}日期</option>)}</select></label>
+          </div>
+
+          <div className="rule-flags">
+            <label><input type="checkbox" checked={draft.labelFirst} onChange={(event) => setDraft({ ...draft, labelFirst: event.target.checked })} />包装日期优先</label>
+            <label><input type="checkbox" checked={draft.qualityOnly} onChange={(event) => setDraft({ ...draft, qualityOnly: event.target.checked })} />只是最佳品质建议</label>
+          </div>
+
+          <label>保存建议 <span className="optional">每行一条</span><textarea rows={4} value={draft.advice} onChange={(event) => setDraft({ ...draft, advice: event.target.value })} placeholder="密封保存，并标注日期。" /></label>
+          <label>安全提醒 <span className="optional">可选</span><textarea rows={2} maxLength={500} value={draft.warning} onChange={(event) => setDraft({ ...draft, warning: event.target.value })} /></label>
+          {formError && <p className="form-error"><CircleAlert size={16} />{formError}</p>}
+          <div className="rule-editor-actions"><button type="button" className="secondary-button" onClick={() => setDraft(null)}>取消</button><button className="primary-button" disabled={saving}>{saving && <LoaderCircle className="spin" size={17} />}保存家庭规则</button></div>
+        </form>
+      )}
+
+      <div className="rules-toolbar">
+        <div className="search-field"><Search size={18} /><input aria-label="搜索保质期规则" placeholder="搜索名称或别名" value={query} onChange={(event) => setQuery(event.target.value)} /></div>
+        <div className="zone-tabs">
+          <button className={zone === "all" ? "active" : ""} onClick={() => setZone("all")}>全部 <span>{entries.length}</span></button>
+          {ZONES.map((option) => <button key={option.key} className={zone === option.key ? "active" : ""} onClick={() => setZone(option.key)}>{option.label} <span>{entries.filter((entry) => entry.storageZone === option.key).length}</span></button>)}
+        </div>
+      </div>
+
+      {loading ? <ContentLoader /> : filteredEntries.length === 0 ? (
+        <div className="inventory-empty"><BookOpenText size={34} /><h2>没有找到规则</h2><p>换个关键词，或者新增一条家庭规则。</p></div>
+      ) : (
+        <div className="rules-list">
+          {filteredEntries.map((entry) => {
+            const zoneInfo = ZONES.find((option) => option.key === entry.storageZone)!;
+            const ZoneIcon = zoneInfo.icon;
+            return (
+              <article className="rule-card" key={entry.key}>
+                <span className={`rule-zone ${zoneInfo.color}`}><ZoneIcon size={18} />{zoneInfo.label}</span>
+                <div className="rule-card-main">
+                  <div className="rule-title-line"><h2>{entry.rule.name}</h2>{entry.customized && <span>{entry.custom ? "家庭新增" : "家庭已修改"}</span>}</div>
+                  <div className="rule-meta"><strong>{formatShelfLife(entry.guidance)}</strong><span>{shelfLifeStartLabel(entry.guidance.startFrom)}日期起算</span><span>{riskLevelLabel(entry.rule.riskLevel)}</span>{entry.guidance.labelFirst && <span>包装优先</span>}</div>
+                  {entry.rule.aliases.length > 0 && <p className="rule-aliases">别名：{entry.rule.aliases.join("、")}</p>}
+                  {entry.guidance.advice.length > 0 && <p className="rule-advice">{entry.guidance.advice.slice(0, 2).join(" ")}</p>}
+                </div>
+                <div className="rule-card-actions">
+                  <button onClick={() => beginEditRule(entry)} aria-label={`编辑${entry.rule.name}`}><Pencil size={16} />编辑</button>
+                  {entry.overrideId && <button className="rule-remove" onClick={() => void removeRule(entry)}>{entry.custom ? <Trash2 size={16} /> : <RotateCcw size={16} />}{entry.custom ? "删除" : "恢复默认"}</button>}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+      <p className="retention-note"><BookOpenText size={16} />家庭规则会覆盖内置建议；包装说明仍应优先，拿不准时不要品尝。</p>
+    </div>
+  );
+}
+
 function Inventory({ items, onChangeQuantity, onSetQuantity, onDelete }: { items: InventoryItem[]; onChangeQuantity: (item: InventoryItem, delta: number) => void; onSetQuantity: (item: InventoryItem, value: number) => void; onDelete: (item: InventoryItem) => void }) {
   const [zone, setZone] = useState<StorageZone | "all">("all");
   const [activeTags, setActiveTags] = useState<string[]>([]);
@@ -924,6 +1278,106 @@ function expiryLabel(date: string) {
   if (days < 0) return `已过期 ${Math.abs(days)} 天`;
   if (days === 0) return "今天到期";
   return `${days} 天后到期`;
+}
+
+function uniqueTrimmedLines(value: string, separator: RegExp) {
+  return Array.from(new Set(value.split(separator).map((entry) => entry.trim()).filter(Boolean)));
+}
+
+function householdRuleGuidance(row: HouseholdShelfLifeRule): ShelfLifeGuidance {
+  return {
+    minDays: row.min_days,
+    maxDays: row.max_days,
+    startFrom: row.start_from,
+    qualityOnly: row.quality_only,
+    labelFirst: row.label_first,
+    advice: row.advice,
+    warning: row.warning ?? undefined
+  };
+}
+
+function householdRowToShelfLifeRule(row: HouseholdShelfLifeRule): ShelfLifeRule {
+  const baseRule = row.base_rule_id
+    ? SHELF_LIFE_RULES.find((rule) => rule.id === row.base_rule_id)
+    : undefined;
+  const sourceIds: ShelfLifeRule["sourceIds"] = baseRule
+    ? Array.from(new Set([...baseRule.sourceIds, "household-custom" as const]))
+    : ["household-custom"];
+  return {
+    id: `household:${row.id}`,
+    name: row.name,
+    aliases: row.aliases,
+    category: row.category,
+    conditions: row.conditions,
+    riskLevel: row.risk_level,
+    storage: { [row.storage_zone]: householdRuleGuidance(row) },
+    sourceIds
+  };
+}
+
+function buildEffectiveShelfLifeRules(overrides: HouseholdShelfLifeRule[]): ShelfLifeRule[] {
+  const overriddenKeys = new Set(
+    overrides
+      .filter((row) => row.base_rule_id)
+      .map((row) => `${row.base_rule_id}:${row.storage_zone}`)
+  );
+  const builtInRules = SHELF_LIFE_RULES.flatMap((rule) => {
+    const storage: ShelfLifeRule["storage"] = {};
+    for (const zone of ZONES) {
+      const guidance = rule.storage[zone.key];
+      if (guidance && !overriddenKeys.has(`${rule.id}:${zone.key}`)) storage[zone.key] = guidance;
+    }
+    return Object.keys(storage).length > 0 ? [{ ...rule, storage }] : [];
+  });
+  return [...builtInRules, ...overrides.map(householdRowToShelfLifeRule)];
+}
+
+function buildRuleManagerEntries(overrides: HouseholdShelfLifeRule[]): RuleEntry[] {
+  const overrideMap = new Map(
+    overrides
+      .filter((row) => row.base_rule_id)
+      .map((row) => [`${row.base_rule_id}:${row.storage_zone}`, row])
+  );
+  const entries: RuleEntry[] = [];
+
+  for (const rule of SHELF_LIFE_RULES) {
+    for (const zone of ZONES) {
+      const guidance = rule.storage[zone.key];
+      if (!guidance) continue;
+      const override = overrideMap.get(`${rule.id}:${zone.key}`);
+      const displayedRule = override ? householdRowToShelfLifeRule(override) : rule;
+      entries.push({
+        key: override ? `override:${override.id}` : `builtin:${rule.id}:${zone.key}`,
+        baseRuleId: rule.id,
+        overrideId: override?.id ?? null,
+        rule: displayedRule,
+        storageZone: zone.key,
+        guidance: override ? householdRuleGuidance(override) : guidance,
+        customized: Boolean(override),
+        custom: false
+      });
+    }
+  }
+
+  for (const row of overrides.filter((override) => !override.base_rule_id)) {
+    const rule = householdRowToShelfLifeRule(row);
+    entries.push({
+      key: `custom:${row.id}`,
+      baseRuleId: null,
+      overrideId: row.id,
+      rule,
+      storageZone: row.storage_zone,
+      guidance: householdRuleGuidance(row),
+      customized: true,
+      custom: true
+    });
+  }
+
+  const zoneOrder = new Map(ZONES.map((entry, index) => [entry.key, index]));
+  return entries.sort((a, b) =>
+    a.rule.name.localeCompare(b.rule.name, "zh-CN")
+    || (zoneOrder.get(a.storageZone) ?? 0) - (zoneOrder.get(b.storageZone) ?? 0)
+  );
 }
 
 const SHELF_LIFE_START_LABELS: Record<ShelfLifeStartPoint, string> = {
