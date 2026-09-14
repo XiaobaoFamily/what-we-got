@@ -3,6 +3,7 @@ import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import {
   Archive,
   Boxes,
+  CalendarDays,
   Cat,
   Check,
   ChevronRight,
@@ -13,6 +14,7 @@ import {
   EyeOff,
   IceCreamBowl,
   LayoutDashboard,
+  Lightbulb,
   LoaderCircle,
   LogOut,
   Minus,
@@ -27,6 +29,12 @@ import {
   WifiOff,
   X
 } from "lucide-react";
+import {
+  calculateSuggestedExpiry,
+  formatShelfLife,
+  searchShelfLifeRules,
+  type ShelfLifeStartPoint
+} from "./data/shelfLifeRules";
 import {
   clearSupabaseConfig,
   loadSupabaseConfig,
@@ -539,9 +547,13 @@ function DashboardList({ title, subtitle, icon, tone, items, empty, onChangeQuan
 
 function AddInventory({ client, household, items, onSaved }: { client: SupabaseClient; household: Household; items: InventoryItem[]; onSaved: () => void }) {
   const [existingId, setExistingId] = useState("");
+  const [itemName, setItemName] = useState("");
   const [zone, setZone] = useState<StorageZone>("pantry");
   const [tags, setTags] = useState<string[]>([]);
   const [customTag, setCustomTag] = useState("");
+  const [shelfLifeStartDate, setShelfLifeStartDate] = useState(() => todayDateValue());
+  const [expiresOn, setExpiresOn] = useState("");
+  const [selectedRuleId, setSelectedRuleId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [formKey, setFormKey] = useState(0);
@@ -550,9 +562,33 @@ function AddInventory({ client, household, items, onSaved }: { client: SupabaseC
 
   useEffect(() => {
     if (!existing) return;
+    setItemName(existing.name);
     setZone(existing.storage_zone);
     setTags(existing.tags ?? []);
+    setExpiresOn(existing.expires_on ?? "");
   }, [existing]);
+
+  const shelfLifeMatches = useMemo(
+    () => searchShelfLifeRules(itemName, { storageZone: zone, limit: 4 }),
+    [itemName, zone]
+  );
+  const selectedMatch = shelfLifeMatches.find((match) => match.rule.id === selectedRuleId) ?? shelfLifeMatches[0];
+  const selectedGuidance = selectedMatch?.guidance ?? null;
+  const suggestedExpiry = selectedGuidance
+    ? calculateSuggestedExpiry(selectedGuidance, shelfLifeStartDate)
+    : null;
+
+  function chooseExisting(nextId: string) {
+    setExistingId(nextId);
+    setShelfLifeStartDate(todayDateValue());
+    setSelectedRuleId("");
+    if (!nextId) {
+      setItemName("");
+      setZone("pantry");
+      setTags([]);
+      setExpiresOn("");
+    }
+  }
 
   function toggleTag(tag: string) {
     setTags((current) => current.includes(tag) ? current.filter((value) => value !== tag) : [...current, tag]);
@@ -568,7 +604,7 @@ function AddInventory({ client, household, items, onSaved }: { client: SupabaseC
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const amount = Number(form.get("quantity")) || 0;
-    const expiresOn = String(form.get("expires_on") || "") || null;
+    const savedExpiresOn = String(form.get("expires_on") || "") || null;
     setLoading(true);
     setError("");
     let saveError;
@@ -578,7 +614,7 @@ function AddInventory({ client, household, items, onSaved }: { client: SupabaseC
         storage_zone: zone,
         unit: String(form.get("unit")),
         low_stock_threshold: Number(form.get("low_stock_threshold")) || 0,
-        expires_on: expiresOn ?? existing.expires_on,
+        expires_on: savedExpiresOn ?? existing.expires_on,
         tags,
         notes: String(form.get("notes") || "") || null
       }).eq("id", existing.id);
@@ -591,7 +627,7 @@ function AddInventory({ client, household, items, onSaved }: { client: SupabaseC
         quantity: amount,
         unit: String(form.get("unit")),
         low_stock_threshold: Number(form.get("low_stock_threshold")) || 0,
-        expires_on: expiresOn,
+        expires_on: savedExpiresOn,
         tags,
         notes: String(form.get("notes") || "") || null
       });
@@ -603,8 +639,12 @@ function AddInventory({ client, household, items, onSaved }: { client: SupabaseC
       return;
     }
     setExistingId("");
+    setItemName("");
     setTags([]);
     setZone("pantry");
+    setShelfLifeStartDate(todayDateValue());
+    setExpiresOn("");
+    setSelectedRuleId("");
     setFormKey((value) => value + 1);
     onSaved();
   }
@@ -612,18 +652,18 @@ function AddInventory({ client, household, items, onSaved }: { client: SupabaseC
   return (
     <div className="page add-page">
       <div className="page-heading"><div><span className="eyebrow">添进家里的清单</span><h1>添加库存</h1></div><p>常买的东西，直接选已有记录补数量。</p></div>
-      <form className="inventory-form" onSubmit={submit} key={formKey}>
+      <form className="inventory-form" onSubmit={submit} key={`${formKey}-${existingId}`}>
         <section className="form-section quick-existing">
           <div className="section-number">01</div>
           <div className="section-content">
             <h2>这是什么？</h2>
             <label>快速选择已有记录
-              <select value={existingId} onChange={(event) => setExistingId(event.target.value)}>
+              <select value={existingId} onChange={(event) => chooseExisting(event.target.value)}>
                 <option value="">＋ 新的库存记录</option>
                 {items.map((item) => <option key={item.id} value={item.id}>{item.name} · 现在 {formatQuantity(item.quantity)} {item.unit}</option>)}
               </select>
             </label>
-            {!existing && <label>名称<input name="name" placeholder="例如：燕麦奶" maxLength={80} required /></label>}
+            {!existing && <label>名称<input name="name" value={itemName} onChange={(event) => { setItemName(event.target.value); setSelectedRuleId(""); }} placeholder="例如：鸡胸肉、草莓、猫罐头" maxLength={80} required /></label>}
             {existing && <div className="selected-existing"><Check size={17} /><span>将在「{existing.name}」现有的 {formatQuantity(existing.quantity)} {existing.unit} 上增加</span></div>}
           </div>
         </section>
@@ -649,7 +689,62 @@ function AddInventory({ client, household, items, onSaved }: { client: SupabaseC
               <label>单位<select name="unit" defaultValue={existing?.unit ?? "件"}><option>件</option><option>包</option><option>盒</option><option>瓶</option><option>罐</option><option>袋</option><option>个</option><option>克</option><option>毫升</option></select></label>
               <label>低库存提醒<input type="number" name="low_stock_threshold" defaultValue={existing?.low_stock_threshold ?? 1} min="0" step="0.1" /></label>
             </div>
-            <label>保质期 / 最佳食用日期<input type="date" name="expires_on" defaultValue={existing?.expires_on ?? ""} /></label>
+            <div className="date-grid">
+              <label>{selectedGuidance ? `${shelfLifeStartLabel(selectedGuidance.startFrom)}日期` : "购买 / 制作日期"}<input type="date" value={shelfLifeStartDate} onChange={(event) => setShelfLifeStartDate(event.target.value)} /></label>
+              <label>保质期 / 最佳食用日期<input type="date" name="expires_on" value={expiresOn} onChange={(event) => setExpiresOn(event.target.value)} /></label>
+            </div>
+
+            {itemName.trim() && selectedMatch && selectedGuidance ? (
+              <section className={`shelf-life-suggestion risk-${selectedMatch.rule.riskLevel}`} aria-live="polite">
+                <header>
+                  <span className="suggestion-icon"><Lightbulb size={19} /></span>
+                  <span><small>规则库建议</small><strong>{selectedMatch.rule.name} · {formatShelfLife(selectedGuidance)}</strong></span>
+                  <span className="risk-label">{riskLevelLabel(selectedMatch.rule.riskLevel)}</span>
+                </header>
+
+                {shelfLifeMatches.length > 1 && (
+                  <div className="rule-choices" aria-label="选择匹配的食品类型">
+                    <span>更准确地选择：</span>
+                    {shelfLifeMatches.map((match) => (
+                      <button
+                        type="button"
+                        key={match.rule.id}
+                        className={match.rule.id === selectedMatch.rule.id ? "selected" : ""}
+                        onClick={() => setSelectedRuleId(match.rule.id)}
+                      >
+                        {match.rule.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="suggestion-summary">
+                  <span>从{shelfLifeStartLabel(selectedGuidance.startFrom)}日期开始，按较短期限计算。</span>
+                  {selectedGuidance.labelFirst && <span className="suggestion-chip">包装日期优先</span>}
+                  {selectedGuidance.qualityOnly && <span className="suggestion-chip">最佳品质建议</span>}
+                </div>
+
+                {suggestedExpiry ? (
+                  <button
+                    type="button"
+                    className={`use-suggested-date ${expiresOn === suggestedExpiry ? "used" : ""}`}
+                    onClick={() => setExpiresOn(suggestedExpiry)}
+                  >
+                    {expiresOn === suggestedExpiry ? <Check size={17} /> : <CalendarDays size={17} />}
+                    {expiresOn === suggestedExpiry ? "已使用建议日期" : `使用建议日期 · ${formatDate(suggestedExpiry)}`}
+                  </button>
+                ) : (
+                  <p className="label-date-required">该食品没有统一天数，请查看包装后手动填写日期。</p>
+                )}
+
+                <ul className="storage-advice">
+                  {selectedGuidance.advice.map((advice) => <li key={advice}>{advice}</li>)}
+                </ul>
+                {selectedGuidance.warning && <p className="shelf-life-warning"><CircleAlert size={16} />{selectedGuidance.warning}</p>}
+              </section>
+            ) : itemName.trim().length >= 2 ? (
+              <p className="no-shelf-life-match"><Lightbulb size={16} />规则库暂时没有匹配项，请手动填写日期。</p>
+            ) : null}
           </div>
         </section>
 
@@ -829,6 +924,34 @@ function expiryLabel(date: string) {
   if (days < 0) return `已过期 ${Math.abs(days)} 天`;
   if (days === 0) return "今天到期";
   return `${days} 天后到期`;
+}
+
+const SHELF_LIFE_START_LABELS: Record<ShelfLifeStartPoint, string> = {
+  purchased: "购买",
+  opened: "开封",
+  prepared: "制作",
+  cooked: "烹调",
+  ripe: "成熟",
+  thawed: "解冻",
+  "package-date": "包装标注"
+};
+
+function shelfLifeStartLabel(startFrom: ShelfLifeStartPoint) {
+  return SHELF_LIFE_START_LABELS[startFrom];
+}
+
+function riskLevelLabel(level: "low" | "medium" | "high") {
+  if (level === "high") return "需注意安全";
+  if (level === "medium") return "注意保存";
+  return "品质参考";
+}
+
+function todayDateValue() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 export default App;
