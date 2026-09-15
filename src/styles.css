@@ -143,7 +143,7 @@ h1, h2, p { margin-top: 0; }
 .error-card code { display: block; margin-top: 10px; overflow-wrap: anywhere; color: #8b3c30; font-size: .77rem; }
 .error-card .primary-button, .error-card .text-button { width: 100%; margin-top: 8px; }
 
-.app-shell { min-height: 100vh; padding-bottom: 0; }
+.app-shell { width: 100%; max-width: 100%; min-height: 100vh; padding-bottom: 0; overflow-x: clip; }
 .app-header { position: sticky; z-index: 20; top: 0; height: 78px; padding: 0 clamp(22px, 5vw, 70px); border-bottom: 1px solid rgba(201,207,198,.8); background: rgba(246,244,238,.9); backdrop-filter: blur(18px); display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; }
 .desktop-tabs { display: flex; gap: 5px; padding: 4px; border-radius: 14px; background: #e8ebe5; }
 .desktop-tabs button { min-width: 92px; height: 42px; border: 0; border-radius: 11px; background: transparent; color: #6a7770; display: flex; align-items: center; justify-content: center; gap: 7px; font-weight: 700; }
@@ -152,8 +152,8 @@ h1, h2, p { margin-top: 0; }
 .household-button > span:first-child { display: grid; place-items: center; width: 31px; height: 31px; border-radius: 9px; color: white; background: var(--red); }
 .household-button-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mobile-tabs { display: none; }
-.app-main { width: min(100%, 1280px); margin: 0 auto; }
-.page { padding: 50px 36px 90px; }
+.app-main { width: min(100%, 1280px); max-width: 100%; min-width: 0; margin: 0 auto; }
+.page { width: 100%; max-width: 100%; min-width: 0; padding: 50px 36px 90px; }
 .page-heading { margin-bottom: 30px; display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; }
 .page-heading h1 { margin: 0; font-size: clamp(2rem, 4vw, 3.6rem); line-height: 1; letter-spacing: -.055em; }
 .page-heading > p { max-width: 320px; margin: 0; color: var(--muted); line-height: 1.6; text-align: right; }
@@ -212,10 +212,10 @@ h1, h2, p { margin-top: 0; }
 .quantity-input-wrap input::-webkit-inner-spin-button, .quantity-input-wrap input::-webkit-outer-spin-button { margin: 0; appearance: none; }
 .quantity-input-wrap small { flex: 0 0 auto; color: var(--muted); font-size: .67rem; }
 
-.inventory-form { border: 1px solid var(--line); border-radius: 24px; background: var(--white); box-shadow: 0 12px 38px rgba(23,53,43,.05); overflow: hidden; }
-.form-section { display: grid; grid-template-columns: 76px 1fr; border-bottom: 1px solid var(--line); }
+.inventory-form { width: 100%; max-width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 24px; background: var(--white); box-shadow: 0 12px 38px rgba(23,53,43,.05); overflow: hidden; }
+.form-section { min-width: 0; display: grid; grid-template-columns: 76px minmax(0, 1fr); border-bottom: 1px solid var(--line); }
 .section-number { padding: 29px 0 0; border-right: 1px solid var(--line); color: #9aa49d; text-align: center; font-size: .74rem; font-weight: 800; letter-spacing: .12em; }
-.section-content { max-width: 840px; padding: 28px 34px 32px; display: grid; gap: 18px; }
+.section-content { width: 100%; max-width: 840px; min-width: 0; padding: 28px 34px 32px; display: grid; gap: 18px; }
 .section-content h2 { margin: 0 0 2px; font-size: 1.13rem; }
 .section-content h2 small { color: var(--muted); font-size: .73rem; font-weight: 600; }
 .selected-existing { display: flex; align-items: center; gap: 8px; padding: 11px 13px; border-radius: 11px; color: #28664f; background: #e8f4ee; font-size: .84rem; }
@@ -228,7 +228,14 @@ h1, h2, p { margin-top: 0; }
 .zone-picker button > svg:last-child { position: absolute; top: 7px; right: 7px; }
 .form-grid { display: grid; gap: 12px; }
 .form-grid.three { grid-template-columns: 1fr 1fr 1fr; }
-.date-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.date-grid { width: 100%; max-width: 100%; min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.date-grid > label { max-width: 100%; min-width: 0; }
+.native-date-shell { box-sizing: border-box; inline-size: 100%; max-inline-size: 100%; min-inline-size: 0; block-size: 48px; border: 1px solid #ccd2c9; border-radius: 12px; background: var(--white); overflow: hidden; display: block; transition: border-color .18s ease, box-shadow .18s ease; }
+.native-date-shell:focus-within { border-color: var(--green-2); box-shadow: 0 0 0 3px rgba(31, 89, 69, .11); }
+.native-date-shell > input[type="date"], .native-date-shell > input[type="datetime-local"] { box-sizing: border-box; display: block; inline-size: 100%; max-inline-size: 100%; min-inline-size: 0 !important; width: 100%; max-width: 100%; min-width: 0 !important; height: 100%; min-height: 0; margin: 0; padding: 0 12px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.native-date-shell > input[type="date"]:focus, .native-date-shell > input[type="datetime-local"]:focus { border: 0; box-shadow: none; }
+.native-date-shell > input[type="date"]::-webkit-date-and-time-value, .native-date-shell > input[type="datetime-local"]::-webkit-date-and-time-value { min-width: 0; text-align: left; }
+.native-date-shell > input[type="date"]::-webkit-calendar-picker-indicator, .native-date-shell > input[type="datetime-local"]::-webkit-calendar-picker-indicator { flex: 0 0 auto; margin-left: 4px; }
 .shelf-life-suggestion { margin-top: 2px; padding: 17px; border: 1px solid #cbded4; border-radius: 17px; background: #f2f8f4; display: grid; gap: 14px; }
 .shelf-life-suggestion.risk-high { border-color: #e7c8be; background: #fff8f5; }
 .shelf-life-suggestion > header { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
@@ -432,7 +439,8 @@ h1, h2, p { margin-top: 0; }
   .section-content { padding: 24px 18px 28px; }
   .form-grid.three { grid-template-columns: 1fr 1fr; }
   .form-grid.three label:last-child { grid-column: span 2; }
-  .date-grid { grid-template-columns: 1fr; }
+  .date-grid { grid-template-columns: minmax(0, 1fr); }
+  .native-date-shell { inline-size: 100%; max-inline-size: 100%; }
   .shelf-life-suggestion { padding: 14px; }
   .shelf-life-suggestion > header { grid-template-columns: auto 1fr; }
   .risk-label { grid-column: 2; justify-self: start; }

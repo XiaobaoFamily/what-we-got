@@ -743,8 +743,8 @@ function AddInventory({ client, household, items, shelfLifeRules, onSaved }: { c
               <label>低库存提醒<input type="number" name="low_stock_threshold" defaultValue={existing?.low_stock_threshold ?? 1} min="0" step="0.1" /></label>
             </div>
             <div className="date-grid">
-              <label>{selectedGuidance ? `${shelfLifeStartLabel(selectedGuidance.startFrom)}日期` : "购买 / 制作日期"}<input type="date" value={shelfLifeStartDate} onChange={(event) => setShelfLifeStartDate(event.target.value)} /></label>
-              <label>保质期 / 最佳食用日期<input type="date" name="expires_on" value={expiresOn} onChange={(event) => setExpiresOn(event.target.value)} /></label>
+              <label>{selectedGuidance ? `${shelfLifeStartLabel(selectedGuidance.startFrom)}日期` : "购买 / 制作日期"}<span className="native-date-shell"><input type="date" value={shelfLifeStartDate} onChange={(event) => setShelfLifeStartDate(event.target.value)} /></span></label>
+              <label>保质期 / 最佳食用日期<span className="native-date-shell"><input type="date" name="expires_on" value={expiresOn} onChange={(event) => setExpiresOn(event.target.value)} /></span></label>
             </div>
 
             {itemName.trim() && selectedMatch && selectedGuidance ? (
