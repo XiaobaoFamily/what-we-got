@@ -26,6 +26,7 @@ import {
   RotateCcw,
   Search,
   Settings,
+  ShoppingBasket,
   Snowflake,
   Trash2,
   Users,
@@ -51,7 +52,7 @@ import {
   saveSupabaseConfig,
   validateSupabaseConfig
 } from "./lib/supabase";
-import type { Household, HouseholdShelfLifeRule, InventoryItem, StorageZone, SupabaseConfig } from "./types";
+import type { Household, HouseholdShelfLifeRule, InventoryItem, ShoppingList, ShoppingListItem, StorageZone, SupabaseConfig } from "./types";
 
 const DEFAULT_TAGS = [
   "小宝",
@@ -75,7 +76,7 @@ const ZONES: Array<{ key: StorageZone; label: string; icon: typeof Archive; colo
   { key: "frozen", label: "冷冻", icon: Snowflake, color: "indigo" }
 ];
 
-type Tab = "dashboard" | "add" | "inventory" | "rules";
+type Tab = "dashboard" | "add" | "inventory" | "shopping" | "rules";
 
 function App() {
   const [config, setConfig] = useState<SupabaseConfig | null>(() => loadSupabaseConfig());
@@ -487,6 +488,7 @@ function InventoryApp({ client, household, email, onDisconnect }: { client: Supa
     { id: "dashboard", label: "看板", icon: LayoutDashboard },
     { id: "add", label: "添加", icon: PackagePlus },
     { id: "inventory", label: "库存", icon: Boxes },
+    { id: "shopping", label: "买菜单", icon: ShoppingBasket },
     { id: "rules", label: "规则", icon: BookOpenText }
   ];
 
@@ -505,11 +507,23 @@ function InventoryApp({ client, household, email, onDisconnect }: { client: Supa
       <main className="app-main">
         {error && <div className="inline-error"><CircleAlert size={18} /> {error}<button onClick={loadItems}>重试</button></div>}
         {loading ? <ContentLoader /> : tab === "dashboard" ? (
-          <Dashboard items={items} onChangeQuantity={changeQuantity} onGoInventory={() => setTab("inventory")} />
+          <Dashboard items={items} onGoInventory={() => setTab("inventory")} />
         ) : tab === "add" ? (
           <AddInventory client={client} household={household} items={items} shelfLifeRules={effectiveShelfLifeRules} onSaved={() => { void loadItems(); setToast("已放进库存"); setTab("inventory"); }} />
         ) : tab === "inventory" ? (
           <Inventory items={items} onChangeQuantity={changeQuantity} onSetQuantity={setQuantity} onEdit={setEditingItem} onDelete={deleteItem} />
+        ) : tab === "shopping" ? (
+          <ShoppingPage
+            client={client}
+            household={household}
+            inventoryItems={items}
+            shelfLifeRules={effectiveShelfLifeRules}
+            onInventorySaved={() => {
+              void loadItems();
+              setToast("已记录到库存");
+            }}
+            onToast={setToast}
+          />
         ) : (
           <RulesManager
             client={client}
@@ -554,9 +568,9 @@ function ContentLoader() {
   return <div className="content-loader"><LoaderCircle className="spin" /><span>正在整理库存…</span></div>;
 }
 
-function Dashboard({ items, onChangeQuantity, onGoInventory }: { items: InventoryItem[]; onChangeQuantity: (item: InventoryItem, delta: number) => void; onGoInventory: () => void }) {
+function Dashboard({ items, onGoInventory }: { items: InventoryItem[]; onGoInventory: () => void }) {
   const urgent = items.filter((item) => Number(item.quantity) > 0 && item.expires_on && daysUntil(item.expires_on) <= 7).slice(0, 5);
-  const low = items.filter((item) => Number(item.quantity) <= Number(item.low_stock_threshold)).slice(0, 5);
+  const low = items.filter((item) => item.low_stock_enabled !== false && Number(item.quantity) <= Number(item.low_stock_threshold)).slice(0, 5);
   const stocked = items.filter((item) => Number(item.quantity) > 0).length;
 
   return (
@@ -581,7 +595,6 @@ function Dashboard({ items, onChangeQuantity, onGoInventory }: { items: Inventor
           tone="urgent"
           items={urgent}
           empty="最近没有要到期的东西"
-          onChangeQuantity={onChangeQuantity}
         />
         <DashboardList
           title="该补货了"
@@ -590,14 +603,13 @@ function Dashboard({ items, onChangeQuantity, onGoInventory }: { items: Inventor
           tone="low"
           items={low}
           empty="库存都很充足"
-          onChangeQuantity={onChangeQuantity}
         />
       </div>
     </div>
   );
 }
 
-function DashboardList({ title, subtitle, icon, tone, items, empty, onChangeQuantity }: { title: string; subtitle: string; icon: React.ReactNode; tone: string; items: InventoryItem[]; empty: string; onChangeQuantity: (item: InventoryItem, delta: number) => void }) {
+function DashboardList({ title, subtitle, icon, tone, items, empty }: { title: string; subtitle: string; icon: React.ReactNode; tone: string; items: InventoryItem[]; empty: string }) {
   return (
     <section className={`dashboard-list ${tone}`}>
       <header><span className="list-title-icon">{icon}</span><span><h2>{title}</h2><p>{subtitle}</p></span><strong>{items.length}</strong></header>
@@ -605,8 +617,8 @@ function DashboardList({ title, subtitle, icon, tone, items, empty, onChangeQuan
         <div className="compact-items">
           {items.map((item) => (
             <div className="compact-item" key={item.id}>
-              <div className="item-main"><span className={`storage-dot ${item.storage_zone}`} /><span><strong>{item.name}</strong><small>{item.expires_on ? expiryLabel(item.expires_on) : Number(item.quantity) === 0 ? "已经用完" : `低于 ${formatQuantity(item.low_stock_threshold)} ${item.unit}`}</small></span></div>
-              <QuantityControl item={item} onChange={onChangeQuantity} />
+              <div className="item-main"><span className={`storage-dot ${item.storage_zone}`} /><span><strong>{item.name}</strong><small>{tone === "low" ? (Number(item.quantity) === 0 ? "已经用完" : `低于 ${formatQuantity(item.low_stock_threshold)} ${item.unit}`) : item.expires_on ? expiryLabel(item.expires_on) : "未设置保质期"}</small></span></div>
+              <span className="dashboard-quantity"><strong>{formatQuantity(item.quantity)}</strong>{item.unit}</span>
             </div>
           ))}
         </div>
@@ -615,14 +627,18 @@ function DashboardList({ title, subtitle, icon, tone, items, empty, onChangeQuan
   );
 }
 
-function AddInventory({ client, household, items, shelfLifeRules, onSaved }: { client: SupabaseClient; household: Household; items: InventoryItem[]; shelfLifeRules: ShelfLifeRule[]; onSaved: () => void }) {
-  const [existingId, setExistingId] = useState("");
-  const [itemName, setItemName] = useState("");
-  const [zone, setZone] = useState<StorageZone>("pantry");
-  const [tags, setTags] = useState<string[]>([]);
+function AddInventory({ client, household, items, shelfLifeRules, onSaved, initialName = "", embedded = false }: { client: SupabaseClient; household: Household; items: InventoryItem[]; shelfLifeRules: ShelfLifeRule[]; onSaved: () => void; initialName?: string; embedded?: boolean }) {
+  const suggestedExisting = initialName
+    ? items.find((item) => item.name.trim().toLocaleLowerCase() === initialName.trim().toLocaleLowerCase())
+    : undefined;
+  const [existingId, setExistingId] = useState(suggestedExisting?.id ?? "");
+  const [itemName, setItemName] = useState(suggestedExisting?.name ?? initialName);
+  const [zone, setZone] = useState<StorageZone>(suggestedExisting?.storage_zone ?? "pantry");
+  const [tags, setTags] = useState<string[]>(suggestedExisting?.tags ?? []);
   const [customTag, setCustomTag] = useState("");
   const [shelfLifeStartDate, setShelfLifeStartDate] = useState(() => todayDateValue());
-  const [expiresOn, setExpiresOn] = useState("");
+  const [expiresOn, setExpiresOn] = useState(suggestedExisting?.expires_on ?? "");
+  const [lowStockEnabled, setLowStockEnabled] = useState(suggestedExisting?.low_stock_enabled !== false);
   const [selectedRuleId, setSelectedRuleId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -636,6 +652,7 @@ function AddInventory({ client, household, items, shelfLifeRules, onSaved }: { c
     setZone(existing.storage_zone);
     setTags(existing.tags ?? []);
     setExpiresOn(existing.expires_on ?? "");
+    setLowStockEnabled(existing.low_stock_enabled !== false);
   }, [existing]);
 
   const shelfLifeMatches = useMemo(
@@ -653,10 +670,11 @@ function AddInventory({ client, household, items, shelfLifeRules, onSaved }: { c
     setShelfLifeStartDate(todayDateValue());
     setSelectedRuleId("");
     if (!nextId) {
-      setItemName("");
+      setItemName(initialName);
       setZone("pantry");
       setTags([]);
       setExpiresOn("");
+      setLowStockEnabled(true);
     }
   }
 
@@ -683,6 +701,7 @@ function AddInventory({ client, household, items, shelfLifeRules, onSaved }: { c
         quantity: Number(existing.quantity) + amount,
         storage_zone: zone,
         unit: String(form.get("unit")),
+        low_stock_enabled: lowStockEnabled,
         low_stock_threshold: Number(form.get("low_stock_threshold")) || 0,
         expires_on: savedExpiresOn ?? existing.expires_on,
         tags,
@@ -696,6 +715,7 @@ function AddInventory({ client, household, items, shelfLifeRules, onSaved }: { c
         storage_zone: zone,
         quantity: amount,
         unit: String(form.get("unit")),
+        low_stock_enabled: lowStockEnabled,
         low_stock_threshold: Number(form.get("low_stock_threshold")) || 0,
         expires_on: savedExpiresOn,
         tags,
@@ -714,14 +734,15 @@ function AddInventory({ client, household, items, shelfLifeRules, onSaved }: { c
     setZone("pantry");
     setShelfLifeStartDate(todayDateValue());
     setExpiresOn("");
+    setLowStockEnabled(true);
     setSelectedRuleId("");
     setFormKey((value) => value + 1);
     onSaved();
   }
 
   return (
-    <div className="page add-page">
-      <div className="page-heading"><div><span className="eyebrow">添进家里的清单</span><h1>添加库存</h1></div><p>常买的东西，直接选已有记录补数量。</p></div>
+    <div className={`page add-page ${embedded ? "embedded-add-page" : ""}`}>
+      {!embedded && <div className="page-heading"><div><span className="eyebrow">添进家里的清单</span><h1>添加库存</h1></div><p>常买的东西，直接选已有记录补数量。</p></div>}
       <form className="inventory-form" onSubmit={submit} key={`${formKey}-${existingId}`}>
         <section className="form-section quick-existing">
           <div className="section-number">01</div>
@@ -754,10 +775,13 @@ function AddInventory({ client, household, items, shelfLifeRules, onSaved }: { c
           <div className="section-number">03</div>
           <div className="section-content">
             <h2>数量和日期</h2>
-            <div className="form-grid three">
+            <div className="form-grid two">
               <label>{existing ? "增加数量" : "当前数量"}<input type="number" name="quantity" defaultValue="1" min="0" step="0.1" required /></label>
               <label>单位<select name="unit" defaultValue={existing?.unit ?? "件"}>{UNIT_OPTIONS.map((unit) => <option key={unit}>{unit}</option>)}</select></label>
-              <label>低库存提醒<input type="number" name="low_stock_threshold" defaultValue={existing?.low_stock_threshold ?? 1} min="0" step="0.1" /></label>
+            </div>
+            <div className="stock-reminder-setting">
+              <label className="checkbox-setting"><input type="checkbox" checked={lowStockEnabled} onChange={(event) => setLowStockEnabled(event.target.checked)} /><span><strong>需要低库存提醒</strong><small>数量不足时显示在看板的“该补货了”</small></span></label>
+              {lowStockEnabled ? <label>提醒阈值数量<input type="number" name="low_stock_threshold" defaultValue={existing?.low_stock_threshold ?? 1} min="0" step="0.1" required /></label> : <input type="hidden" name="low_stock_threshold" value={existing?.low_stock_threshold ?? 1} />}
             </div>
             <div className="date-grid">
               <label>{selectedGuidance ? `${shelfLifeStartLabel(selectedGuidance.startFrom)}日期` : "购买 / 制作日期"}<span className="native-date-shell"><input type="date" value={shelfLifeStartDate} onChange={(event) => setShelfLifeStartDate(event.target.value)} /></span></label>
@@ -861,6 +885,244 @@ function QuickExpiryOptions({ startDate, value, onChange }: { startDate: string;
         })}
       </div>
       <small>从上方的起算日期开始计算</small>
+    </div>
+  );
+}
+
+type CheckedPurchase = {
+  item: ShoppingListItem;
+  listComplete: boolean;
+};
+
+function ShoppingPage({ client, household, inventoryItems, shelfLifeRules, onInventorySaved, onToast }: { client: SupabaseClient; household: Household; inventoryItems: InventoryItem[]; shelfLifeRules: ShelfLifeRule[]; onInventorySaved: () => void; onToast: (message: string) => void }) {
+  const [lists, setLists] = useState<ShoppingList[]>([]);
+  const [listItems, setListItems] = useState<ShoppingListItem[]>([]);
+  const [selectedListId, setSelectedListId] = useState("");
+  const [newListName, setNewListName] = useState("");
+  const [newItemName, setNewItemName] = useState("");
+  const [showNewList, setShowNewList] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [pendingPurchase, setPendingPurchase] = useState<CheckedPurchase | null>(null);
+  const [inventoryCandidate, setInventoryCandidate] = useState<CheckedPurchase | null>(null);
+  const [pendingClearList, setPendingClearList] = useState<ShoppingList | null>(null);
+
+  const loadShopping = useCallback(async () => {
+    const [listsResult, itemsResult] = await Promise.all([
+      client.from("shopping_lists").select("*").eq("household_id", household.id).order("sort_order", { ascending: true }).order("created_at", { ascending: true }),
+      client.from("shopping_list_items").select("*").eq("household_id", household.id).order("created_at", { ascending: true })
+    ]);
+    setLoading(false);
+    const queryError = listsResult.error ?? itemsResult.error;
+    if (queryError) {
+      setLoadError(queryError.message);
+      return;
+    }
+    const nextLists = (listsResult.data ?? []) as ShoppingList[];
+    setLoadError("");
+    setLists(nextLists);
+    setListItems((itemsResult.data ?? []) as ShoppingListItem[]);
+    setSelectedListId((current) => nextLists.some((list) => list.id === current) ? current : nextLists[0]?.id ?? "");
+  }, [client, household.id]);
+
+  useEffect(() => {
+    void loadShopping();
+    const channel = client
+      .channel(`shopping-${household.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "shopping_lists", filter: `household_id=eq.${household.id}` }, () => void loadShopping())
+      .on("postgres_changes", { event: "*", schema: "public", table: "shopping_list_items", filter: `household_id=eq.${household.id}` }, () => void loadShopping())
+      .subscribe();
+    return () => { void client.removeChannel(channel); };
+  }, [client, household.id, loadShopping]);
+
+  const activeList = lists.find((list) => list.id === selectedListId) ?? null;
+  const activeItems = listItems
+    .filter((item) => item.shopping_list_id === selectedListId)
+    .sort((a, b) => Number(a.checked) - Number(b.checked) || a.created_at.localeCompare(b.created_at));
+  const remainingCount = activeItems.filter((item) => !item.checked).length;
+
+  async function addList(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = newListName.trim();
+    if (!name) return;
+    setSaving(true);
+    const nextOrder = Math.max(0, ...lists.map((list) => Number(list.sort_order))) + 10;
+    const { data, error } = await client.from("shopping_lists").insert({ household_id: household.id, name, sort_order: nextOrder }).select("*").single();
+    setSaving(false);
+    if (error) {
+      onToast(error.code === "23505" ? "已经有同名买菜单" : "新增买菜单失败，请重试");
+      return;
+    }
+    const created = data as ShoppingList;
+    setLists((current) => [...current, created]);
+    setSelectedListId(created.id);
+    setNewListName("");
+    setShowNewList(false);
+  }
+
+  async function deleteList() {
+    if (!activeList || !window.confirm(`确认删除「${activeList.name}」买菜单和其中所有项目？`)) return;
+    const { error } = await client.from("shopping_lists").delete().eq("id", activeList.id).eq("household_id", household.id);
+    if (error) {
+      onToast("删除买菜单失败，请重试");
+      return;
+    }
+    setLists((current) => current.filter((list) => list.id !== activeList.id));
+    setListItems((current) => current.filter((item) => item.shopping_list_id !== activeList.id));
+    setSelectedListId(lists.find((list) => list.id !== activeList.id)?.id ?? "");
+    onToast("买菜单已删除");
+  }
+
+  async function addItem(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = newItemName.trim();
+    if (!name || !activeList) return;
+    setSaving(true);
+    const { data, error } = await client.from("shopping_list_items").insert({ household_id: household.id, shopping_list_id: activeList.id, name }).select("*").single();
+    setSaving(false);
+    if (error) {
+      onToast("添加购买项目失败，请重试");
+      return;
+    }
+    setListItems((current) => [...current, data as ShoppingListItem]);
+    setNewItemName("");
+  }
+
+  async function deleteItem(item: ShoppingListItem) {
+    const { error } = await client.from("shopping_list_items").delete().eq("id", item.id).eq("household_id", household.id);
+    if (error) {
+      onToast("删除购买项目失败，请重试");
+      return;
+    }
+    setListItems((current) => current.filter((entry) => entry.id !== item.id));
+  }
+
+  async function toggleItem(item: ShoppingListItem) {
+    const checked = !item.checked;
+    const updatedItem = { ...item, checked };
+    const nextItems = listItems.map((entry) => entry.id === item.id ? updatedItem : entry);
+    setListItems(nextItems);
+    const { error } = await client.from("shopping_list_items").update({ checked }).eq("id", item.id).eq("household_id", household.id);
+    if (error) {
+      onToast("更新购买项目失败，请重试");
+      void loadShopping();
+      return;
+    }
+    if (checked) {
+      const siblings = nextItems.filter((entry) => entry.shopping_list_id === item.shopping_list_id);
+      setPendingPurchase({ item: updatedItem, listComplete: siblings.length > 0 && siblings.every((entry) => entry.checked) });
+    }
+  }
+
+  function finishPurchasePrompt(recordInventory: boolean) {
+    if (!pendingPurchase) return;
+    const completed = pendingPurchase;
+    setPendingPurchase(null);
+    if (recordInventory) {
+      setInventoryCandidate(completed);
+      return;
+    }
+    if (completed.listComplete) setPendingClearList(lists.find((list) => list.id === completed.item.shopping_list_id) ?? null);
+  }
+
+  function finishInventoryRecord(saved: boolean) {
+    if (!inventoryCandidate) return;
+    const completed = inventoryCandidate;
+    setInventoryCandidate(null);
+    if (saved) onInventorySaved();
+    if (completed.listComplete) setPendingClearList(lists.find((list) => list.id === completed.item.shopping_list_id) ?? null);
+  }
+
+  async function clearCompletedList() {
+    if (!pendingClearList) return;
+    const list = pendingClearList;
+    setPendingClearList(null);
+    const { error } = await client.from("shopping_list_items").delete().eq("shopping_list_id", list.id).eq("household_id", household.id).eq("checked", true);
+    if (error) {
+      onToast("清空买菜单失败，请重试");
+      return;
+    }
+    setListItems((current) => current.filter((item) => item.shopping_list_id !== list.id || !item.checked));
+    onToast(`已清空「${list.name}」`);
+  }
+
+  return (
+    <div className="page shopping-page">
+      <div className="page-heading shopping-heading"><div><span className="eyebrow">分店记录，买到就勾掉</span><h1>买菜单</h1></div><div className="summary-pill shopping-summary"><strong>{remainingCount}</strong><span>项待购买</span></div></div>
+
+      {loadError ? (
+        <div className="rules-migration-error"><CircleAlert size={19} /><span><strong>买菜单数据库还没有准备好</strong><small>请先在 Supabase SQL Editor 运行 migration：202609220001_shopping_lists_and_optional_low_stock.sql</small><small>{loadError}</small></span></div>
+      ) : loading ? <ContentLoader /> : (
+        <>
+          <section className="shopping-toolbar">
+            <label>选择买菜单
+              <select value={selectedListId} onChange={(event) => setSelectedListId(event.target.value)} disabled={lists.length === 0}>
+                {lists.length === 0 ? <option value="">还没有买菜单</option> : lists.map((list) => {
+                  const listEntries = listItems.filter((item) => item.shopping_list_id === list.id);
+                  const pending = listEntries.filter((item) => !item.checked).length;
+                  return <option key={list.id} value={list.id}>{list.name} · {pending} 项未买</option>;
+                })}
+              </select>
+            </label>
+            <button className="secondary-button" onClick={() => setShowNewList((current) => !current)}><Plus size={17} />新增买菜单</button>
+          </section>
+
+          {showNewList && <form className="new-shopping-list" onSubmit={addList}><input value={newListName} onChange={(event) => setNewListName(event.target.value)} placeholder="例如：Trader Joe's" maxLength={40} autoFocus /><button className="primary-button" disabled={saving || !newListName.trim()}><Plus size={17} />创建</button><button type="button" className="icon-button" onClick={() => setShowNewList(false)} aria-label="取消新增"><X size={19} /></button></form>}
+
+          {activeList ? (
+            <section className="shopping-card">
+              <header><div><span className="shopping-store-icon"><ShoppingBasket size={21} /></span><span><h2>{activeList.name}</h2><p>{activeItems.length === 0 ? "还没有要买的东西" : `${remainingCount} 项未买 · ${activeItems.length - remainingCount} 项已买`}</p></span></div><button className="icon-button shopping-list-delete" onClick={deleteList} aria-label={`删除 ${activeList.name} 买菜单`}><Trash2 size={17} /></button></header>
+              <form className="shopping-item-form" onSubmit={addItem}><input value={newItemName} onChange={(event) => setNewItemName(event.target.value)} placeholder={`添加要从 ${activeList.name} 买的东西`} maxLength={120} /><button className="primary-button" disabled={saving || !newItemName.trim()}><Plus size={18} />添加</button></form>
+              {activeItems.length === 0 ? <div className="shopping-empty"><ShoppingBasket size={30} /><strong>购物清单还是空的</strong><span>在上面输入要买的菜或日用品。</span></div> : <div className="shopping-checklist">{activeItems.map((item) => <div className={`shopping-item ${item.checked ? "checked" : ""}`} key={item.id}><button className="shopping-check" onClick={() => void toggleItem(item)} aria-label={item.checked ? `将 ${item.name} 标记为未买` : `将 ${item.name} 标记为已买`}>{item.checked && <Check size={17} />}</button><button className="shopping-item-name" onClick={() => void toggleItem(item)}>{item.name}</button><button className="icon-button shopping-item-delete" onClick={() => void deleteItem(item)} aria-label={`删除 ${item.name}`}><Trash2 size={16} /></button></div>)}</div>}
+            </section>
+          ) : <div className="inventory-empty"><ShoppingBasket size={34} /><h2>先建立一个买菜单</h2><p>可以按商店分别记录需要购买的东西。</p></div>}
+        </>
+      )}
+
+      {pendingPurchase && <DecisionDialog title={`要把「${pendingPurchase.item.name}」记录进库存吗？`} description="这项已经标记为买到；记录后可以填写数量、储存位置和保质期。" primaryLabel="记录库存" secondaryLabel="暂时不用" onPrimary={() => finishPurchasePrompt(true)} onSecondary={() => finishPurchasePrompt(false)} onClose={() => finishPurchasePrompt(false)} />}
+      {inventoryCandidate && <PurchasedInventoryPanel key={inventoryCandidate.item.id} client={client} household={household} items={inventoryItems} shelfLifeRules={shelfLifeRules} itemName={inventoryCandidate.item.name} onClose={() => finishInventoryRecord(false)} onSaved={() => finishInventoryRecord(true)} />}
+      {pendingClearList && <DecisionDialog title={`「${pendingClearList.name}」全部买齐了`} description="要清空这个买菜单里的已完成项目吗？清空后可以开始下一轮采购。" primaryLabel="清空买菜单" secondaryLabel="先保留" onPrimary={() => void clearCompletedList()} onSecondary={() => setPendingClearList(null)} onClose={() => setPendingClearList(null)} />}
+    </div>
+  );
+}
+
+function DecisionDialog({ title, description, primaryLabel, secondaryLabel, onPrimary, onSecondary, onClose }: { title: string; description: string; primaryLabel: string; secondaryLabel: string; onPrimary: () => void; onSecondary: () => void; onClose: () => void }) {
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  return (
+    <div className="modal-backdrop decision-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="decision-dialog" role="dialog" aria-modal="true" aria-label={title}>
+        <span className="decision-icon"><Check size={25} /></span>
+        <h2>{title}</h2>
+        <p>{description}</p>
+        <div><button className="secondary-button" onClick={onSecondary}>{secondaryLabel}</button><button className="primary-button" onClick={onPrimary}>{primaryLabel}</button></div>
+      </section>
+    </div>
+  );
+}
+
+function PurchasedInventoryPanel({ client, household, items, shelfLifeRules, itemName, onClose, onSaved }: { client: SupabaseClient; household: Household; items: InventoryItem[]; shelfLifeRules: ShelfLifeRule[]; itemName: string; onClose: () => void; onSaved: () => void }) {
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  return (
+    <div className="modal-backdrop edit-inventory-backdrop purchased-inventory-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="purchased-inventory-panel" role="dialog" aria-modal="true" aria-label={`记录 ${itemName} 的库存`}>
+        <header><div><span className="eyebrow">从买菜单加入库存</span><h2>记录「{itemName}」</h2></div><button className="icon-button" onClick={onClose} aria-label="关闭入库窗口"><X size={20} /></button></header>
+        <AddInventory client={client} household={household} items={items} shelfLifeRules={shelfLifeRules} initialName={itemName} embedded onSaved={onSaved} />
+      </section>
     </div>
   );
 }
@@ -1218,7 +1480,7 @@ function InventoryRow({ item, onChangeQuantity, onSetQuantity, onEdit, onDelete 
       <div className={`row-zone ${zone.color}`}><Icon size={21} /><span>{zone.label}</span></div>
       <div className="row-info">
         <div className="row-name-line"><h2>{item.name}</h2>{Number(item.quantity) === 0 && <span className="status-chip out">已用完</span>}{expiry !== null && expiry < 0 && <span className="status-chip expired">已过期</span>}{expiry !== null && expiry >= 0 && expiry <= 7 && <span className="status-chip soon">{expiry === 0 ? "今天到期" : `${expiry} 天后到期`}</span>}</div>
-        <div className="row-meta"><span>{item.expires_on ? formatDate(item.expires_on) : "未设置保质期"}</span>{item.tags?.map((tag) => <span className="mini-tag" key={tag}>{tag}</span>)}</div>
+        <div className="row-meta"><span>{item.expires_on ? formatDate(item.expires_on) : "未设置保质期"}</span><span className={`stock-alert-meta ${item.low_stock_enabled === false ? "disabled" : ""}`}>{item.low_stock_enabled === false ? "不提醒补货" : `≤ ${formatQuantity(item.low_stock_threshold)} ${item.unit} 提醒`}</span>{item.tags?.map((tag) => <span className="mini-tag" key={tag}>{tag}</span>)}</div>
       </div>
       <QuantityControl item={item} onChange={onChangeQuantity} onSet={onSetQuantity} large />
       <div className="row-actions">
@@ -1289,6 +1551,7 @@ function EditInventoryPanel({ client, item, onClose, onSaved }: { client: Supaba
   const [zone, setZone] = useState<StorageZone>(item.storage_zone);
   const [quantity, setQuantity] = useState(String(item.quantity));
   const [unit, setUnit] = useState(item.unit);
+  const [lowStockEnabled, setLowStockEnabled] = useState(item.low_stock_enabled !== false);
   const [lowStockThreshold, setLowStockThreshold] = useState(String(item.low_stock_threshold));
   const [expiryStartDate, setExpiryStartDate] = useState(() => todayDateValue());
   const [expiresOn, setExpiresOn] = useState(item.expires_on ?? "");
@@ -1325,7 +1588,7 @@ function EditInventoryPanel({ client, item, onClose, onSaved }: { client: Supaba
       setError("请填写库存名称。");
       return;
     }
-    if (!Number.isFinite(parsedQuantity) || parsedQuantity < 0 || !Number.isFinite(parsedThreshold) || parsedThreshold < 0) {
+    if (!Number.isFinite(parsedQuantity) || parsedQuantity < 0 || (lowStockEnabled && (!Number.isFinite(parsedThreshold) || parsedThreshold < 0))) {
       setError("数量和低库存提醒必须是大于或等于 0 的数字。");
       return;
     }
@@ -1339,7 +1602,8 @@ function EditInventoryPanel({ client, item, onClose, onSaved }: { client: Supaba
         storage_zone: zone,
         quantity: parsedQuantity,
         unit,
-        low_stock_threshold: parsedThreshold,
+        low_stock_enabled: lowStockEnabled,
+        low_stock_threshold: Number.isFinite(parsedThreshold) && parsedThreshold >= 0 ? parsedThreshold : 0,
         expires_on: expiresOn || null,
         tags,
         notes: notes.trim() || null
@@ -1371,10 +1635,13 @@ function EditInventoryPanel({ client, item, onClose, onSaved }: { client: Supaba
             ))}
           </div>
 
-          <div className="form-grid three">
+          <div className="form-grid two">
             <label>当前数量<input type="number" inputMode="decimal" min="0" step="any" value={quantity} onChange={(event) => setQuantity(event.target.value)} required /></label>
             <label>单位<select value={unit} onChange={(event) => setUnit(event.target.value)}>{!UNIT_OPTIONS.includes(unit) && <option>{unit}</option>}{UNIT_OPTIONS.map((option) => <option key={option}>{option}</option>)}</select></label>
-            <label>低库存提醒<input type="number" inputMode="decimal" min="0" step="any" value={lowStockThreshold} onChange={(event) => setLowStockThreshold(event.target.value)} required /></label>
+          </div>
+          <div className="stock-reminder-setting">
+            <label className="checkbox-setting"><input type="checkbox" checked={lowStockEnabled} onChange={(event) => setLowStockEnabled(event.target.checked)} /><span><strong>需要低库存提醒</strong><small>关闭后不会出现在看板的“该补货了”</small></span></label>
+            {lowStockEnabled && <label>提醒阈值数量<input type="number" inputMode="decimal" min="0" step="any" value={lowStockThreshold} onChange={(event) => setLowStockThreshold(event.target.value)} required /></label>}
           </div>
 
           <div className="date-grid">

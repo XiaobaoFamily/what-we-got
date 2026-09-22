@@ -19,10 +19,30 @@ export interface InventoryItem {
   storage_zone: StorageZone;
   quantity: number;
   unit: string;
+  low_stock_enabled: boolean;
   low_stock_threshold: number;
   expires_on: string | null;
   tags: string[];
   notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ShoppingList {
+  id: string;
+  household_id: string;
+  name: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ShoppingListItem {
+  id: string;
+  household_id: string;
+  shopping_list_id: string;
+  name: string;
+  checked: boolean;
   created_at: string;
   updated_at: string;
 }
