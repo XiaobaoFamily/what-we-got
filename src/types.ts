@@ -14,6 +14,9 @@ export interface Household {
 
 export interface InventoryItem {
   id: string;
+  product_id: string;
+  opened_on: string | null;
+  opened_days: number | null;
   household_id: string;
   name: string;
   storage_zone: StorageZone;

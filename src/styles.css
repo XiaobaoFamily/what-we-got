@@ -229,6 +229,9 @@ h1, h2, p { margin-top: 0; }
 .zone-picker button.selected.indigo { border-color: #5f6cb4; background: #e9ebfb; }
 .zone-picker button > svg:last-child { position: absolute; top: 7px; right: 7px; }
 .form-grid { display: grid; gap: 12px; }
+.shared-product-fields { min-width: 0; margin: 0; padding: 0; border: 0; display: grid; gap: 12px; }
+.shared-product-fields:disabled { opacity: .65; }
+.batch-open-button { margin-top: 9px; padding: 6px 12px; border: 1px solid #b9d4c5; border-radius: 9px; background: #edf4f0; color: var(--green-2); font-weight: 700; }
 .form-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .form-grid.three { grid-template-columns: 1fr 1fr 1fr; }
 .date-grid { width: 100%; max-width: 100%; min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
