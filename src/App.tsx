@@ -615,16 +615,38 @@ function Dashboard({ items, onGoInventory, onAddShopping }: { items: InventoryIt
 
 function DashboardInventory({ items }: { items: InventoryItem[] }) {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [zone, setZone] = useState<StorageZone | "all">("all");
+  const [showMoreTags, setShowMoreTags] = useState(false);
+  const quickTags = ["蔬菜", "瓜果", "肉类", "乳制品"];
   const tags = Array.from(new Set([...DEFAULT_TAGS, ...items.flatMap((item) => item.tags ?? [])]));
-  const filtered = sortBatches(items).filter((item) => selectedTags.every((tag) => item.tags?.includes(tag)));
+  const moreTags = tags.filter((tag) => !quickTags.includes(tag));
+  const moreSelectedCount = selectedTags.filter((tag) => !quickTags.includes(tag)).length;
+  const filtered = sortBatches(items).filter((item) =>
+    (zone === "all" || item.storage_zone === zone)
+    && (selectedTags.length === 0 || selectedTags.some((tag) => item.tags?.includes(tag)))
+  );
+  const toggleTag = (tag: string) => setSelectedTags((current) => current.includes(tag) ? current.filter((entry) => entry !== tag) : [...current, tag]);
   return <section className="dashboard-list stock-overview">
     <header><span className="list-title-icon"><Boxes size={19} /></span><span><h2>库存总览</h2><p>到期近的在前 · 用完的在底部</p></span><strong aria-label="批次数量">{filtered.length}</strong></header>
-    <div className="overview-tags" aria-label="库存标签筛选">
-      <button aria-pressed={selectedTags.length === 0} className={!selectedTags.length ? "active" : ""} onClick={() => setSelectedTags([])}>全部</button>
-      {tags.map((tag) => <button key={tag} aria-pressed={selectedTags.includes(tag)} className={selectedTags.includes(tag) ? "active" : ""} onClick={() => setSelectedTags((current) => current.includes(tag) ? current.filter((entry) => entry !== tag) : [...current, tag])}>{tag}</button>)}
+    <div className="overview-tags overview-zones" role="group" aria-label="储存位置筛选">
+      <button aria-pressed={zone === "all"} className={zone === "all" ? "active" : ""} onClick={() => setZone("all")}>全部位置</button>
+      {ZONES.map((entry) => <button key={entry.key} aria-pressed={zone === entry.key} className={zone === entry.key ? "active" : ""} onClick={() => setZone(entry.key)}>{entry.label}</button>)}
     </div>
-    {selectedTags.length > 1 && <p className="overview-filter-note">同时包含所选标签</p>}
-    {!filtered.length ? <div className="empty-state">{items.length ? "没有符合标签的库存，试试其他标签。" : "还没有库存记录。"}</div> : <div className="overview-rows">{filtered.map((item) => {
+    <div className="overview-tags" role="group" aria-label="库存标签筛选">
+      {quickTags.map((tag) => <button key={tag} aria-pressed={selectedTags.includes(tag)} className={selectedTags.includes(tag) ? "active" : ""} onClick={() => toggleTag(tag)}>{tag}</button>)}
+      <button aria-expanded={showMoreTags} aria-controls="overview-more-tags" className={moreSelectedCount ? "active" : ""} onClick={() => setShowMoreTags((current) => !current)}>更多标签{moreSelectedCount > 0 ? ` · ${moreSelectedCount}` : ""} {showMoreTags ? "▴" : "▾"}</button>
+    </div>
+    {showMoreTags && <div id="overview-more-tags" className="overview-more-tags" role="group" aria-label="更多库存标签">
+      {moreTags.map((tag) => <label key={tag}><input type="checkbox" checked={selectedTags.includes(tag)} onChange={() => toggleTag(tag)} />{tag}</label>)}
+      <button className="text-button" onClick={() => setShowMoreTags(false)}>收起</button>
+    </div>}
+    {(zone !== "all" || selectedTags.length > 0) && <div className="overview-tags overview-selected" aria-label="当前筛选条件">
+      {zone !== "all" && <button onClick={() => setZone("all")} aria-label="移除储存位置筛选">{ZONES.find((entry) => entry.key === zone)?.label} ×</button>}
+      {selectedTags.map((tag) => <button key={tag} onClick={() => toggleTag(tag)} aria-label={`移除标签 ${tag}`}>{tag} ×</button>)}
+      <button onClick={() => { setZone("all"); setSelectedTags([]); setShowMoreTags(false); }}>清除筛选</button>
+    </div>}
+    {selectedTags.length > 1 && <p className="overview-filter-note">所选位置内，匹配任意一个标签</p>}
+    {!filtered.length ? <div className="empty-state">{items.length ? "没有符合条件的库存，试试其他位置或标签。" : "还没有库存记录。"}</div> : <div className="overview-rows">{filtered.map((item) => {
       const date = effectiveExpiry(item);
       const days = date ? daysUntil(date) : null;
       const empty = Number(item.quantity) === 0;

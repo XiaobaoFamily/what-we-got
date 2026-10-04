@@ -181,6 +181,12 @@ h1, h2, p { margin-top: 0; }
 .overview-tags button { padding: 5px 9px; min-height: 30px; border: 1px solid var(--line); border-radius: 999px; background: transparent; font-size: .72rem; }
 .overview-tags button.active { background: var(--green); color: white; border-color: var(--green); }
 .overview-filter-note { margin: 6px 12px; font-size: .7rem; color: var(--muted); }
+.overview-zones { padding-bottom: 6px; border-bottom: 0; }
+.overview-more-tags { padding: 12px; background: #f1f4ee; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 10px 16px; }
+.overview-more-tags label { display: flex; align-items: center; gap: 6px; font-size: .75rem; cursor: pointer; }
+.overview-more-tags input { width: 18px; height: 18px; min-height: 18px; margin: 0; accent-color: var(--green-2); }
+.overview-more-tags .text-button { margin-left: auto; padding: 4px 8px; font-size: .72rem; }
+.overview-selected button { color: var(--green-2); background: #edf4f0; }
 .overview-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(90px, auto); gap: 10px; align-items: center; padding: 9px 12px; border-bottom: 1px solid #ecece7; }
 .overview-row:last-child { border-bottom: 0; }
 .overview-name, .overview-expiry { min-width: 0; display: grid; gap: 3px; }
