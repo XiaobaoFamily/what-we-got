@@ -1008,6 +1008,18 @@ export function getShelfLifeGuidance(rule: ShelfLifeRule, storageZone: StorageZo
   return rule.storage[storageZone] ?? null;
 }
 
+/** Only opening-specific guidance belongs in the opening dialog. */
+export function searchOpeningRules(name: string, storageZone: StorageZone, rules: ShelfLifeRule[]): ShelfLifeMatch[] {
+  return searchShelfLifeRules(name, { storageZone, conditions: ["opened"], rules, limit: rules.length })
+    .filter((match) => match.guidance?.startFrom === "opened")
+    .sort((a, b) => Number(b.rule.id.startsWith("household:")) - Number(a.rule.id.startsWith("household:")) || b.score - a.score)
+    .slice(0, 4);
+}
+
+export function openingSuggestedDays(guidance: ShelfLifeGuidance | null): string {
+  return guidance && !guidance.labelFirst && guidance.minDays != null ? String(guidance.minDays) : "";
+}
+
 export function formatShelfLife(guidance: ShelfLifeGuidance): string {
   if (guidance.minDays === null || guidance.maxDays === null) return "请按包装说明设置";
   const { minDays, maxDays } = guidance;

@@ -17,6 +17,7 @@ export interface InventoryItem {
   product_id: string;
   opened_on: string | null;
   opened_days: number | null;
+  purchased_on: string | null;
   household_id: string;
   name: string;
   storage_zone: StorageZone;
@@ -46,6 +47,7 @@ export interface ShoppingListItem {
   shopping_list_id: string;
   name: string;
   checked: boolean;
+  stocked_at: string | null;
   created_at: string;
   updated_at: string;
 }

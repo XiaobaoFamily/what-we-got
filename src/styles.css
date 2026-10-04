@@ -193,6 +193,13 @@ h1, h2, p { margin-top: 0; }
 .item-main small { margin-top: 3px; color: #9b5143; font-size: .73rem; }
 .dashboard-quantity { flex: 0 0 auto; padding: 7px 10px; border-radius: 10px; color: #607068; background: #f1f3ef; font-size: .7rem; }
 .dashboard-quantity strong { margin-right: 3px; color: var(--ink); font-size: .9rem; }
+.dashboard-item-actions { flex: 0 0 auto; display: grid; justify-items: end; gap: 5px; padding: 8px 0; }
+.dashboard-item-actions .batch-open-button { margin-top: 0; font-size: .72rem; }
+.batch-notes { margin: 7px 0 0; color: var(--muted); font-size: .78rem; overflow-wrap: anywhere; white-space: pre-wrap; }
+.shopping-stock-action { grid-column: 2 / 4; margin: -8px 0 12px; }
+.shopping-stock-action .batch-open-button { margin-top: 0; }
+.shopping-stock-action > span { display: flex; align-items: center; gap: 5px; color: var(--green-2); font-size: .75rem; }
+.shopping-clear-action { padding: 10px 15px; text-align: right; border-top: 1px solid var(--line); }
 .storage-dot { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; }
 .storage-dot.pantry { background: #dca728; }
 .storage-dot.chilled { background: #438daf; }
