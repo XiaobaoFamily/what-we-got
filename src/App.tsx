@@ -60,6 +60,9 @@ import { effectiveExpiry, productTotals, sortBatches } from "./lib/inventory";
 const DEFAULT_TAGS = [
   "小宝",
   "新鲜食物",
+  "蔬菜",
+  "瓜果",
+  "肉类",
   "预制菜",
   "调味料",
   "饮料",
@@ -576,7 +579,6 @@ function ContentLoader() {
 }
 
 function Dashboard({ items, onGoInventory, onAddShopping }: { items: InventoryItem[]; onGoInventory: () => void; onAddShopping: (item: InventoryItem) => void }) {
-  const urgent = sortBatches(items).filter((item) => Number(item.quantity) > 0 && effectiveExpiry(item) && daysUntil(effectiveExpiry(item)!) <= 7).slice(0, 5);
   const totals = productTotals(items);
   const low = totals.filter((item) => item.low_stock_enabled !== false && Number(item.quantity) <= Number(item.low_stock_threshold)).slice(0, 5);
   const stocked = totals.filter((item) => Number(item.quantity) > 0).length;
@@ -596,14 +598,7 @@ function Dashboard({ items, onGoInventory, onAddShopping }: { items: InventoryIt
       </section>
 
       <div className="dashboard-grid">
-        <DashboardList
-          title="快到期了"
-          subtitle="7 天内优先吃掉"
-          icon={<CircleAlert size={20} />}
-          tone="urgent"
-          items={urgent}
-          empty="最近没有要到期的东西"
-        />
+        <DashboardInventory items={items} />
         <DashboardList
           title="该补货了"
           onAddShopping={onAddShopping}
@@ -616,6 +611,31 @@ function Dashboard({ items, onGoInventory, onAddShopping }: { items: InventoryIt
       </div>
     </div>
   );
+}
+
+function DashboardInventory({ items }: { items: InventoryItem[] }) {
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const tags = Array.from(new Set([...DEFAULT_TAGS, ...items.flatMap((item) => item.tags ?? [])]));
+  const filtered = sortBatches(items).filter((item) => selectedTags.every((tag) => item.tags?.includes(tag)));
+  return <section className="dashboard-list stock-overview">
+    <header><span className="list-title-icon"><Boxes size={19} /></span><span><h2>库存总览</h2><p>到期近的在前 · 用完的在底部</p></span><strong aria-label="批次数量">{filtered.length}</strong></header>
+    <div className="overview-tags" aria-label="库存标签筛选">
+      <button aria-pressed={selectedTags.length === 0} className={!selectedTags.length ? "active" : ""} onClick={() => setSelectedTags([])}>全部</button>
+      {tags.map((tag) => <button key={tag} aria-pressed={selectedTags.includes(tag)} className={selectedTags.includes(tag) ? "active" : ""} onClick={() => setSelectedTags((current) => current.includes(tag) ? current.filter((entry) => entry !== tag) : [...current, tag])}>{tag}</button>)}
+    </div>
+    {selectedTags.length > 1 && <p className="overview-filter-note">同时包含所选标签</p>}
+    {!filtered.length ? <div className="empty-state">{items.length ? "没有符合标签的库存，试试其他标签。" : "还没有库存记录。"}</div> : <div className="overview-rows">{filtered.map((item) => {
+      const date = effectiveExpiry(item);
+      const days = date ? daysUntil(date) : null;
+      const empty = Number(item.quantity) === 0;
+      const tone = empty ? "out" : days !== null && days < 0 ? "expired" : days !== null && days <= 7 ? "soon" : "";
+      return <article key={item.id} className={`overview-row ${tone}`}>
+        <div className="overview-name"><strong>{item.name}</strong><small>{ZONES.find((zone) => zone.key === item.storage_zone)?.label} · {item.opened_on ? "已开封" : "未开封"}{item.purchased_on && ` · ${formatDate(item.purchased_on)} 购买`}</small></div>
+        <span className="overview-amount">{formatQuantity(item.quantity)} {item.unit}</span>
+        <div className="overview-expiry"><strong>{empty ? "已用完" : date ? expiryLabel(date) : "未设置日期"}</strong>{date && <small>{formatDate(date)}</small>}</div>
+      </article>;
+    })}</div>}
+  </section>;
 }
 
 function DashboardList({ title, subtitle, icon, tone, items, empty, onAddShopping }: { title: string; subtitle: string; icon: React.ReactNode; tone: string; items: InventoryItem[]; empty: string; onAddShopping?: (item: InventoryItem) => void }) {
@@ -1541,12 +1561,14 @@ function InventoryRow({ item, onChangeQuantity, onSetQuantity, onEdit, onOpen, o
       <div className={`row-zone ${zone.color}`}><Icon size={21} /><span>{zone.label}</span></div>
       <div className="row-info">
         <div className="row-name-line"><h2>{item.name}</h2>{Number(item.quantity) === 0 && <span className="status-chip out">已用完</span>}{expiry !== null && expiry < 0 && <span className="status-chip expired">已过期</span>}{expiry !== null && expiry >= 0 && expiry <= 7 && <span className="status-chip soon">{expiry === 0 ? "今天到期" : `${expiry} 天后到期`}</span>}</div>
-        <div className="row-meta"><span>{item.opened_on ? "已开封" : "未开封"} · {item.purchased_on ? `${formatDate(item.purchased_on)} 购买` : "购买日期未填写"}</span><span>{effectiveExpiry(item) ? `${formatDate(effectiveExpiry(item)!)} 前用完` : "未设置日期"}</span><span className={`stock-alert-meta ${item.low_stock_enabled === false ? "disabled" : ""}`}>{item.low_stock_enabled === false ? "不提醒补货" : `总剩余 ≤ ${formatQuantity(item.low_stock_threshold)} ${item.unit} 提醒`}</span>{item.tags?.map((tag) => <span className="mini-tag" key={tag}>{tag}</span>)}</div>
-        {item.notes && <p className="batch-notes">{item.notes}</p>}
-        {item.opened_on && <div className="row-meta">{formatDate(item.opened_on)} 开封 · {item.opened_days} 天内用完{item.expires_on && ` · 包装日期 ${formatDate(item.expires_on)}`}</div>}
-        <button className="batch-open-button" disabled={Number(item.quantity) <= 0 && !item.opened_on} onClick={() => item.opened_on ? onEdit(item) : onOpen(item)}>{item.opened_on ? "修改开封信息" : "开封"}</button>
+        <div className="row-meta"><span>{item.opened_on ? "已开封" : "未开封"} · {effectiveExpiry(item) ? `${formatDate(effectiveExpiry(item)!)} 前用完` : "未设置日期"}</span></div>
+        <details className="batch-details"><summary>{item.purchased_on ? `${formatDate(item.purchased_on)} 购买` : "购买日期未填写"} · 详情</summary>
+          <div className="row-meta"><span>{item.low_stock_enabled === false ? "不提醒补货" : `总剩余 ≤ ${formatQuantity(item.low_stock_threshold)} ${item.unit} 提醒`}</span>{item.tags?.map((tag) => <span className="mini-tag" key={tag}>{tag}</span>)}</div>
+          {item.notes && <p className="batch-notes">{item.notes}</p>}
+          {item.opened_on && <div className="row-meta">{formatDate(item.opened_on)} 开封 · {item.opened_days} 天内用完{item.expires_on && ` · 包装日期 ${formatDate(item.expires_on)}`}</div>}
+        </details>
       </div>
-      <QuantityControl item={item} onChange={onChangeQuantity} onSet={onSetQuantity} large />
+      <div className="batch-controls"><button className="batch-open-button" disabled={Number(item.quantity) <= 0 && !item.opened_on} onClick={() => item.opened_on ? onEdit(item) : onOpen(item)}>{item.opened_on ? "修改开封" : "开封"}</button><QuantityControl item={item} onChange={onChangeQuantity} onSet={onSetQuantity} large /></div>
       <div className="row-actions">
         <button className="edit-button" onClick={() => onEdit(item)} aria-label={`编辑 ${item.name}`}><Pencil size={17} /></button>
         <button className="delete-button" onClick={() => onDelete(item)} aria-label={`删除 ${item.name}`}><Trash2 size={17} /></button>
