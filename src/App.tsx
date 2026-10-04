@@ -515,7 +515,7 @@ function InventoryApp({ client, household, email, onDisconnect }: { client: Supa
       <main className="app-main">
         {error && <div className="inline-error"><CircleAlert size={18} /> {error}<button onClick={loadItems}>重试</button></div>}
         {loading ? <ContentLoader /> : tab === "dashboard" ? (
-          <Dashboard items={items} onGoInventory={() => setTab("inventory")} onAddShopping={setShoppingCandidate} />
+          <Dashboard items={items} onAddShopping={setShoppingCandidate} />
         ) : tab === "add" ? (
           <AddInventory client={client} household={household} items={items} shelfLifeRules={effectiveShelfLifeRules} onSaved={() => { void loadItems(); setToast("已放进库存"); setTab("inventory"); }} />
         ) : tab === "inventory" ? (
@@ -578,24 +578,15 @@ function ContentLoader() {
   return <div className="content-loader"><LoaderCircle className="spin" /><span>正在整理库存…</span></div>;
 }
 
-function Dashboard({ items, onGoInventory, onAddShopping }: { items: InventoryItem[]; onGoInventory: () => void; onAddShopping: (item: InventoryItem) => void }) {
+function Dashboard({ items, onAddShopping }: { items: InventoryItem[]; onAddShopping: (item: InventoryItem) => void }) {
   const totals = productTotals(items);
   const low = totals.filter((item) => item.low_stock_enabled !== false && Number(item.quantity) <= Number(item.low_stock_threshold)).slice(0, 5);
-  const stocked = totals.filter((item) => Number(item.quantity) > 0).length;
 
   return (
     <div className="page dashboard-page">
       <div className="page-heading dashboard-heading">
         <div><span className="eyebrow">今天先看这些</span><h1>家里还有什么？</h1></div>
-        <div className="summary-pill"><strong>{stocked}</strong><span>种有库存</span></div>
       </div>
-
-      <section className="zone-summary" aria-label="储存区域概览">
-        {ZONES.map(({ key, label, icon: Icon, color }) => {
-          const zoneItems = productTotals(items.filter((item) => item.storage_zone === key && Number(item.quantity) > 0));
-          return <button key={key} className={`zone-card ${color}`} onClick={onGoInventory}><span className="zone-icon"><Icon size={24} /></span><span><strong>{zoneItems.length}</strong><small>{label}</small></span><ChevronRight size={17} /></button>;
-        })}
-      </section>
 
       <div className="dashboard-grid">
         <DashboardInventory items={items} />
