@@ -607,23 +607,28 @@ function Dashboard({ items, onAddShopping }: { items: InventoryItem[]; onAddShop
 function DashboardInventory({ items }: { items: InventoryItem[] }) {
   const [copyMessage, setCopyMessage] = useState("");
   const [manualPrompt, setManualPrompt] = useState("");
+  const [extraIngredientIds, setExtraIngredientIds] = useState<string[]>([]);
+  const usableItems = sortBatches(items).filter((item) => Number(item.quantity) > 0 && !(item.tags ?? []).some((tag) => ["小宝", "日用品"].includes(tag)) && (!effectiveExpiry(item) || daysUntil(effectiveExpiry(item)!) >= 0));
+  const isMainIngredient = (item: InventoryItem) => item.tags?.some((tag) => ["蔬菜", "肉类"].includes(tag));
+  const extraOptions = usableItems.filter((item) => !isMainIngredient(item));
+  const selectedExtras = extraOptions.filter((item) => extraIngredientIds.includes(item.id));
   async function copyMealPrompt() {
-    const available = sortBatches(items).filter((item) => Number(item.quantity) > 0 && item.tags?.some((tag) => ["蔬菜", "肉类"].includes(tag)) && !(item.tags ?? []).some((tag) => ["小宝", "日用品"].includes(tag)) && (!effectiveExpiry(item) || daysUntil(effectiveExpiry(item)!) >= 0));
+    const available = usableItems.filter((item) => isMainIngredient(item) || extraIngredientIds.includes(item.id));
     if (!available.length) {
-      setCopyMessage("暂无可用的蔬菜或肉类库存，请检查库存标签。");
+      setCopyMessage("暂无可用食材，请检查库存标签或选择其他食材。");
       setManualPrompt("");
       return;
     }
     const categories = ["蔬菜", "肉类"];
     const groups = new Map<string, string[]>();
     for (const item of available) {
-      const category = categories.find((tag) => item.tags?.includes(tag))!;
+      const category = categories.find((tag) => item.tags?.includes(tag)) ?? "其他食材";
       const description = `${item.name}（${formatQuantity(item.quantity)} ${item.unit}）`;
       groups.set(category, [...(groups.get(category) ?? []), description]);
     }
     const prompt = [
-      "请以下面的蔬菜和肉类为主食材，推荐 3 个两人份做饭方案，每个方案 2 道菜，油烟少。调料和辅料自行搭配。列出菜名、用量和简短做法。",
-      ...categories.map((category) => `${category}：${groups.get(category)?.join("；") ?? "暂无"}`)
+      "请以下面的食材为主，根据小红书、抖音和下厨房上的中餐热门做法推荐 3 个两人份做饭方案，每个方案 2 道菜，油烟少。调料和辅料自行搭配。列出菜名、用量和简短做法。",
+      ...[...categories, ...(selectedExtras.length ? ["其他食材"] : [])].map((category) => `${category}：${groups.get(category)?.join("；") ?? "暂无"}`)
     ].join("\n\n");
     try {
       await navigator.clipboard.writeText(prompt);
@@ -649,6 +654,12 @@ function DashboardInventory({ items }: { items: InventoryItem[] }) {
   return <section className="dashboard-list stock-overview">
     <header><span className="list-title-icon"><Boxes size={19} /></span><span><h2>库存总览</h2><p>到期近的在前 · 用完的在底部</p></span><strong aria-label="批次数量">{filtered.length}</strong></header>
     <div className="overview-tags"><button onClick={() => void copyMealPrompt()}><Copy size={14} /> 复制做饭 Prompt</button><span className="overview-filter-note">蔬菜、肉类 · 3 个方案 · 每方案 2 道菜 · 少油烟</span></div>
+    <details className="meal-prompt-fallback">
+      <summary>添加其他食材{selectedExtras.length > 0 ? ` · 已选 ${selectedExtras.length} 项` : "（可选）"}</summary>
+      <div className="overview-more-tags" role="group" aria-label="做饭 Prompt 的其他食材">
+        {extraOptions.length ? extraOptions.map((item) => <label key={item.id}><input type="checkbox" checked={extraIngredientIds.includes(item.id)} onChange={(event) => { setExtraIngredientIds((current) => event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id)); setCopyMessage(""); setManualPrompt(""); }} />{item.name} · {formatQuantity(item.quantity)} {item.unit}{effectiveExpiry(item) ? ` · ${formatDate(effectiveExpiry(item)!)} 到期` : ""}</label>) : <span>暂无其他可用库存食材</span>}
+      </div>
+    </details>
     {copyMessage && <p className="overview-filter-note" role="status">{copyMessage}</p>}
     {manualPrompt && <label className="meal-prompt-fallback">做饭 Prompt<textarea readOnly rows={8} value={manualPrompt} onFocus={(event) => event.currentTarget.select()} /></label>}
     <div className="overview-tags overview-zones" role="group" aria-label="储存位置筛选">
