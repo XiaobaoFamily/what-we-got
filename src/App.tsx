@@ -628,6 +628,8 @@ function DashboardInventory({ items }: { items: InventoryItem[] }) {
     }
     const prompt = [
       "请以下面的食材为主，根据小红书、抖音和下厨房上的中餐热门做法推荐 3 个两人份做饭方案，每个方案 2 道菜，油烟少。调料和辅料自行搭配。列出菜名、用量和简短做法。",
+      "至少 1 个方案使用你 memory 中保存的我们家的低油烟菜谱；如果无法读取或没有相关菜谱，请说明，不要编造。",
+      "可以额外推荐购买 1–2 样食材来丰富搭配，优先利用现有食材，并单独列出需要购买的食材及用量。",
       ...[...categories, ...(selectedExtras.length ? ["其他食材"] : [])].map((category) => `${category}：${groups.get(category)?.join("；") ?? "暂无"}`)
     ].join("\n\n");
     try {
