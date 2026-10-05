@@ -605,6 +605,35 @@ function Dashboard({ items, onAddShopping }: { items: InventoryItem[]; onAddShop
 }
 
 function DashboardInventory({ items }: { items: InventoryItem[] }) {
+  const [copyMessage, setCopyMessage] = useState("");
+  const [manualPrompt, setManualPrompt] = useState("");
+  async function copyMealPrompt() {
+    const available = sortBatches(items).filter((item) => Number(item.quantity) > 0 && item.tags?.some((tag) => ["蔬菜", "肉类"].includes(tag)) && !(item.tags ?? []).some((tag) => ["小宝", "日用品"].includes(tag)) && (!effectiveExpiry(item) || daysUntil(effectiveExpiry(item)!) >= 0));
+    if (!available.length) {
+      setCopyMessage("暂无可用的蔬菜或肉类库存，请检查库存标签。");
+      setManualPrompt("");
+      return;
+    }
+    const categories = ["蔬菜", "肉类"];
+    const groups = new Map<string, string[]>();
+    for (const item of available) {
+      const category = categories.find((tag) => item.tags?.includes(tag))!;
+      const description = `${item.name}（${formatQuantity(item.quantity)} ${item.unit}）`;
+      groups.set(category, [...(groups.get(category) ?? []), description]);
+    }
+    const prompt = [
+      "请以下面的蔬菜和肉类为主食材，推荐 3 个两人份做饭方案，每个方案 2 道菜，油烟少。调料和辅料自行搭配。列出菜名、用量和简短做法。",
+      ...categories.map((category) => `${category}：${groups.get(category)?.join("；") ?? "暂无"}`)
+    ].join("\n\n");
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setManualPrompt("");
+      setCopyMessage("已复制，可直接粘贴给 AI。");
+    } catch {
+      setManualPrompt(prompt);
+      setCopyMessage("自动复制失败，请长按下方文字或全选后手动复制。");
+    }
+  }
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [zone, setZone] = useState<StorageZone | "all">("all");
   const [showMoreTags, setShowMoreTags] = useState(false);
@@ -619,6 +648,9 @@ function DashboardInventory({ items }: { items: InventoryItem[] }) {
   const toggleTag = (tag: string) => setSelectedTags((current) => current.includes(tag) ? current.filter((entry) => entry !== tag) : [...current, tag]);
   return <section className="dashboard-list stock-overview">
     <header><span className="list-title-icon"><Boxes size={19} /></span><span><h2>库存总览</h2><p>到期近的在前 · 用完的在底部</p></span><strong aria-label="批次数量">{filtered.length}</strong></header>
+    <div className="overview-tags"><button onClick={() => void copyMealPrompt()}><Copy size={14} /> 复制做饭 Prompt</button><span className="overview-filter-note">蔬菜、肉类 · 3 个方案 · 每方案 2 道菜 · 少油烟</span></div>
+    {copyMessage && <p className="overview-filter-note" role="status">{copyMessage}</p>}
+    {manualPrompt && <label className="meal-prompt-fallback">做饭 Prompt<textarea readOnly rows={8} value={manualPrompt} onFocus={(event) => event.currentTarget.select()} /></label>}
     <div className="overview-tags overview-zones" role="group" aria-label="储存位置筛选">
       <button aria-pressed={zone === "all"} className={zone === "all" ? "active" : ""} onClick={() => setZone("all")}>全部位置</button>
       {ZONES.map((entry) => <button key={entry.key} aria-pressed={zone === entry.key} className={zone === entry.key ? "active" : ""} onClick={() => setZone(entry.key)}>{entry.label}</button>)}

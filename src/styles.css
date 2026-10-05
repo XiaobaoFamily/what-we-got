@@ -625,3 +625,5 @@ h1, h2, p { margin-top: 0; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+.meal-prompt-fallback { display: block; margin: 12px 16px; font-size: 12px; }
+.meal-prompt-fallback textarea { display: block; width: 100%; min-width: 0; box-sizing: border-box; margin-top: 6px; }
