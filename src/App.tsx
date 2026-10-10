@@ -55,7 +55,7 @@ import {
   validateSupabaseConfig
 } from "./lib/supabase";
 import type { Household, HouseholdShelfLifeRule, InventoryItem, ShoppingList, ShoppingListItem, StorageZone, SupabaseConfig } from "./types";
-import { effectiveExpiry, productTotals, sortBatches } from "./lib/inventory";
+import { effectiveExpiry, productTotals, sortBatches, recentNamedItems, previousShelfLifeDays } from "./lib/inventory";
 
 const DEFAULT_TAGS = [
   "小宝",
@@ -715,7 +715,7 @@ function DashboardList({ title, subtitle, icon, tone, items, empty, onAddShoppin
 }
 
 function AddInventory({ client, household, items, shelfLifeRules, onSaved, initialName = "", embedded = false, shoppingItemId }: { client: SupabaseClient; household: Household; items: InventoryItem[]; shelfLifeRules: ShelfLifeRule[]; onSaved: () => void; initialName?: string; embedded?: boolean; shoppingItemId?: string }) {
-  const products = productTotals(items);
+  const products = recentNamedItems(items);
   const initialMatches = products.filter((item) => initialName.trim() && item.name.trim().toLocaleLowerCase() === initialName.trim().toLocaleLowerCase());
   const suggestedExisting = initialMatches.length === 1 ? initialMatches[0] : undefined;
   const [existingId, setExistingId] = useState(suggestedExisting?.product_id ?? "");
@@ -725,14 +725,18 @@ function AddInventory({ client, household, items, shelfLifeRules, onSaved, initi
   const [customTag, setCustomTag] = useState("");
   const [shelfLifeStartDate, setShelfLifeStartDate] = useState(() => todayDateValue());
   const [purchasedOn, setPurchasedOn] = useState(todayDateValue());
-  const [expiresOn, setExpiresOn] = useState("");
+  const initialDays = suggestedExisting ? previousShelfLifeDays(items, suggestedExisting.name, suggestedExisting.storage_zone) : null;
+  const [historyDays, setHistoryDays] = useState<number | null>(initialDays);
+  const [expiresOn, setRawExpiryValue] = useState(() => initialDays === null ? "" : dateAfterDays(todayDateValue(), initialDays) ?? "");
+  function setExpiryValue(value: string | null) { setRawExpiryValue(value ?? ""); }
+  function setExpiresOn(value: string) { setHistoryDays(null); setExpiryValue(value); }
   const [lowStockEnabled, setLowStockEnabled] = useState(suggestedExisting?.low_stock_enabled !== false);
   const [selectedRuleId, setSelectedRuleId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [formKey, setFormKey] = useState(0);
 
-  const existing = items.find((item) => item.product_id === existingId);
+  const existing = products.find((item) => item.product_id === existingId);
   const nameMatches = itemName.trim() ? products.filter((item) => item.name.toLocaleLowerCase().includes(itemName.trim().toLocaleLowerCase())) : [];
 
   function matchExistingName() {
@@ -754,11 +758,13 @@ function AddInventory({ client, household, items, shelfLifeRules, onSaved, initi
     setExistingId(nextId);
     setShelfLifeStartDate(todayDateValue());
     setSelectedRuleId("");
-    const selected = items.find((item) => item.product_id === nextId);
+    const selected = products.find((item) => item.product_id === nextId);
     setItemName(selected?.name ?? initialName);
     setZone(selected?.storage_zone ?? "pantry");
     setTags(selected?.tags ?? []);
-    setExpiresOn("");
+    const days = selected ? previousShelfLifeDays(items, selected.name, selected.storage_zone) : null;
+    setHistoryDays(days);
+    setExpiryValue(days === null ? "" : dateAfterDays(todayDateValue(), days));
     setLowStockEnabled(selected?.low_stock_enabled !== false);
   }
 
@@ -786,13 +792,13 @@ function AddInventory({ client, household, items, shelfLifeRules, onSaved, initi
     setError("");
     const batch = {
         household_id: household.id,
-        product_id: existing?.product_id,
+        product_id: existing?.unit === String(form.get("unit")) ? existing.product_id : undefined,
         name: existing?.name ?? itemName.trim(),
         storage_zone: zone,
         quantity: amount,
-        unit: existing?.unit ?? String(form.get("unit")),
+        unit: String(form.get("unit")),
         low_stock_enabled: lowStockEnabled,
-        low_stock_threshold: Number(form.get("low_stock_threshold")) || 0,
+        low_stock_threshold: existing?.low_stock_threshold ?? (Number(form.get("low_stock_threshold")) || 0),
         expires_on: savedExpiresOn,
         purchased_on: purchasedOn || null,
         tags,
@@ -831,17 +837,17 @@ function AddInventory({ client, household, items, shelfLifeRules, onSaved, initi
             <label>快速选择已有物品
               <select value={existingId} onChange={(event) => chooseExisting(event.target.value)}>
                 <option value="">＋ 新物品（同名同单位自动归为同一种）</option>
-                {productTotals(items).map((item) => <option key={item.product_id} value={item.product_id}>{item.name} · 总剩余 {formatQuantity(item.quantity)} {item.unit}</option>)}
+                {products.map((item) => <option key={item.product_id} value={item.product_id}>{item.name}</option>)}
               </select>
             </label>
             {!existing && <>
               <label>名称<input name="name" value={itemName} onChange={(event) => { setItemName(event.target.value); setSelectedRuleId(""); }} onBlur={matchExistingName} placeholder="例如：鸡胸肉、草莓、猫罐头" maxLength={80} required /></label>
               {nameMatches.length > 0 && <div className="overview-tags" role="group" aria-label="匹配的已有物品">
-                {nameMatches.map((item) => <button type="button" key={item.product_id} onMouseDown={(event) => event.preventDefault()} onClick={() => chooseExisting(item.product_id)}>{item.name} · {item.unit} · 剩余 {formatQuantity(item.quantity)}</button>)}
+                {nameMatches.map((item) => <button type="button" key={item.product_id} onMouseDown={(event) => event.preventDefault()} onClick={() => chooseExisting(item.product_id)}>{item.name}</button>)}
               </div>}
-              <small className="muted">同名物品自动匹配；同名不同单位时，请选择对应物品。</small>
+              <small className="muted">按名称自动沿用上次记录，本批单位可自由选择。</small>
             </>}
-            {existing && <div className="selected-existing"><Check size={17} /><span>为「{existing.name}」新建未开封批次，请填写本批保质期。物品标签和补货设置沿用已有设置。</span></div>}
+            {existing && <div className="selected-existing"><Check size={17} /><span>为「{existing.name}」新建未开封批次，已沿用上次储存条件、标签和补货设置；单位和日期可调整。</span></div>}
           </div>
         </section>
 
@@ -851,7 +857,15 @@ function AddInventory({ client, household, items, shelfLifeRules, onSaved, initi
             <h2>放在哪里？</h2>
             <div className="zone-picker">
               {ZONES.map(({ key, label, icon: Icon, color }) => (
-                <button type="button" key={key} className={`${color} ${zone === key ? "selected" : ""}`} onClick={() => setZone(key)}><Icon size={22} /><span>{label}</span>{zone === key && <Check size={15} />}</button>
+                <button type="button" key={key} className={`${color} ${zone === key ? "selected" : ""}`} onClick={() => {
+                  if (key === zone) return;
+                  setZone(key);
+                  if (existing && (historyDays !== null || !expiresOn)) {
+                    const days = previousShelfLifeDays(items, existing.name, key);
+                    setHistoryDays(days);
+                    setExpiryValue(days !== null && shelfLifeStartDate ? dateAfterDays(shelfLifeStartDate, days) : "");
+                  }
+                }}><Icon size={22} /><span>{label}</span>{zone === key && <Check size={15} />}</button>
               ))}
             </div>
           </div>
@@ -863,7 +877,7 @@ function AddInventory({ client, household, items, shelfLifeRules, onSaved, initi
             <h2>数量和日期</h2>
             <div className="form-grid two">
               <label>本批数量<input type="number" name="quantity" defaultValue="1" min="0" step="0.01" required /></label>
-              <label>单位<select name="unit" disabled={Boolean(existing)} defaultValue={existing?.unit ?? "件"}>{existing && !UNIT_OPTIONS.includes(existing.unit) && <option>{existing.unit}</option>}{UNIT_OPTIONS.map((unit) => <option key={unit}>{unit}</option>)}</select></label>
+              <label>单位<select name="unit" defaultValue={existing?.unit ?? "件"}>{existing && !UNIT_OPTIONS.includes(existing.unit) && <option>{existing.unit}</option>}{UNIT_OPTIONS.map((unit) => <option key={unit}>{unit}</option>)}</select></label>
             </div>
             <fieldset className="stock-reminder-setting shared-product-fields" disabled={Boolean(existing)}>
               <label className="checkbox-setting"><input type="checkbox" checked={lowStockEnabled} onChange={(event) => setLowStockEnabled(event.target.checked)} /><span><strong>需要低库存提醒</strong><small>数量不足时显示在看板的“该补货了”</small></span></label>
@@ -871,10 +885,11 @@ function AddInventory({ client, household, items, shelfLifeRules, onSaved, initi
             </fieldset>
             <div className="date-grid">
               <label>购买日期<span className="native-date-shell"><input type="date" value={purchasedOn} max={todayDateValue()} onChange={(event) => setPurchasedOn(event.target.value)} /></span><small className="muted">与下面的保质期起算日期分别记录</small></label>
-              <label>{selectedGuidance ? `${shelfLifeStartLabel(selectedGuidance.startFrom)}日期` : "购买 / 制作日期"}<span className="native-date-shell"><input type="date" value={shelfLifeStartDate} onChange={(event) => setShelfLifeStartDate(event.target.value)} /></span></label>
+              <label>{selectedGuidance ? `${shelfLifeStartLabel(selectedGuidance.startFrom)}日期` : "购买 / 制作日期"}<span className="native-date-shell"><input type="date" value={shelfLifeStartDate} onChange={(event) => { setShelfLifeStartDate(event.target.value); if (historyDays !== null) setExpiryValue(event.target.value ? dateAfterDays(event.target.value, historyDays) : ""); }} /></span></label>
               <label>保质期 / 最佳食用日期<span className="native-date-shell"><input type="date" name="expires_on" value={expiresOn} onChange={(event) => setExpiresOn(event.target.value)} /></span></label>
             </div>
             <QuickExpiryOptions startDate={shelfLifeStartDate} value={expiresOn} onChange={setExpiresOn} />
+            {historyDays !== null && <p className="muted">已按同名、同储存条件的历史记录预填 {historyDays} 天（购买日到到期日），可按本批包装日期调整。</p>}
 
             {itemName.trim() && selectedMatch && selectedGuidance ? (
               <section className={`shelf-life-suggestion risk-${selectedMatch.rule.riskLevel}`} aria-live="polite">
