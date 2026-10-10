@@ -715,9 +715,9 @@ function DashboardList({ title, subtitle, icon, tone, items, empty, onAddShoppin
 }
 
 function AddInventory({ client, household, items, shelfLifeRules, onSaved, initialName = "", embedded = false, shoppingItemId }: { client: SupabaseClient; household: Household; items: InventoryItem[]; shelfLifeRules: ShelfLifeRule[]; onSaved: () => void; initialName?: string; embedded?: boolean; shoppingItemId?: string }) {
-  const suggestedExisting = initialName
-    ? items.find((item) => item.name.trim().toLocaleLowerCase() === initialName.trim().toLocaleLowerCase())
-    : undefined;
+  const products = productTotals(items);
+  const initialMatches = products.filter((item) => initialName.trim() && item.name.trim().toLocaleLowerCase() === initialName.trim().toLocaleLowerCase());
+  const suggestedExisting = initialMatches.length === 1 ? initialMatches[0] : undefined;
   const [existingId, setExistingId] = useState(suggestedExisting?.product_id ?? "");
   const [itemName, setItemName] = useState(suggestedExisting?.name ?? initialName);
   const [zone, setZone] = useState<StorageZone>(suggestedExisting?.storage_zone ?? "pantry");
@@ -733,6 +733,12 @@ function AddInventory({ client, household, items, shelfLifeRules, onSaved, initi
   const [formKey, setFormKey] = useState(0);
 
   const existing = items.find((item) => item.product_id === existingId);
+  const nameMatches = itemName.trim() ? products.filter((item) => item.name.toLocaleLowerCase().includes(itemName.trim().toLocaleLowerCase())) : [];
+
+  function matchExistingName() {
+    const exact = nameMatches.filter((item) => item.name.trim().toLocaleLowerCase() === itemName.trim().toLocaleLowerCase());
+    if (exact.length === 1) chooseExisting(exact[0].product_id);
+  }
 
   const shelfLifeMatches = useMemo(
     () => searchShelfLifeRules(itemName, { storageZone: zone, limit: 4, rules: shelfLifeRules }),
@@ -828,7 +834,13 @@ function AddInventory({ client, household, items, shelfLifeRules, onSaved, initi
                 {productTotals(items).map((item) => <option key={item.product_id} value={item.product_id}>{item.name} · 总剩余 {formatQuantity(item.quantity)} {item.unit}</option>)}
               </select>
             </label>
-            {!existing && <label>名称<input name="name" value={itemName} onChange={(event) => { setItemName(event.target.value); setSelectedRuleId(""); }} placeholder="例如：鸡胸肉、草莓、猫罐头" maxLength={80} required /></label>}
+            {!existing && <>
+              <label>名称<input name="name" value={itemName} onChange={(event) => { setItemName(event.target.value); setSelectedRuleId(""); }} onBlur={matchExistingName} placeholder="例如：鸡胸肉、草莓、猫罐头" maxLength={80} required /></label>
+              {nameMatches.length > 0 && <div className="overview-tags" role="group" aria-label="匹配的已有物品">
+                {nameMatches.map((item) => <button type="button" key={item.product_id} onMouseDown={(event) => event.preventDefault()} onClick={() => chooseExisting(item.product_id)}>{item.name} · {item.unit} · 剩余 {formatQuantity(item.quantity)}</button>)}
+              </div>}
+              <small className="muted">同名物品自动匹配；同名不同单位时，请选择对应物品。</small>
+            </>}
             {existing && <div className="selected-existing"><Check size={17} /><span>为「{existing.name}」新建未开封批次，请填写本批保质期。物品标签和补货设置沿用已有设置。</span></div>}
           </div>
         </section>
