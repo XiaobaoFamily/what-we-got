@@ -391,6 +391,8 @@ function HouseholdSetup({ client, onComplete, onDisconnect }: { client: Supabase
 function InventoryApp({ client, household, email, onDisconnect }: { client: SupabaseClient; household: Household; email: string; onDisconnect: () => void }) {
   const [tab, setTab] = useState<Tab>("dashboard");
   const [items, setItems] = useState<InventoryItem[]>([]);
+  // Keep depleted batches available to AddInventory as reusable history.
+  const stockedItems = items.filter((item) => Number(item.quantity) > 0);
   const [ruleOverrides, setRuleOverrides] = useState<HouseholdShelfLifeRule[]>([]);
   const [rulesLoading, setRulesLoading] = useState(true);
   const [rulesError, setRulesError] = useState("");
@@ -514,11 +516,11 @@ function InventoryApp({ client, household, email, onDisconnect }: { client: Supa
       <main className="app-main">
         {error && <div className="inline-error"><CircleAlert size={18} /> {error}<button onClick={loadItems}>重试</button></div>}
         {loading ? <ContentLoader /> : tab === "dashboard" ? (
-          <Dashboard items={items} onAddShopping={setShoppingCandidate} />
+          <Dashboard items={stockedItems} onAddShopping={setShoppingCandidate} />
         ) : tab === "add" ? (
           <AddInventory client={client} household={household} items={items} shelfLifeRules={effectiveShelfLifeRules} onSaved={() => { void loadItems(); setToast("已放进库存"); setTab("inventory"); }} />
         ) : tab === "inventory" ? (
-          <Inventory items={items} onChangeQuantity={changeQuantity} onSetQuantity={setQuantity} onEdit={setEditingItem} onOpen={setOpeningItem} onDelete={deleteItem} />
+          <Inventory items={stockedItems} onChangeQuantity={changeQuantity} onSetQuantity={setQuantity} onEdit={setEditingItem} onOpen={setOpeningItem} onDelete={deleteItem} />
         ) : tab === "shopping" ? (
           <ShoppingPage
             client={client}
@@ -592,11 +594,11 @@ function Dashboard({ items, onAddShopping }: { items: InventoryItem[]; onAddShop
         <DashboardList
           title="该补货了"
           onAddShopping={onAddShopping}
-          subtitle="用完或低于提醒数量"
+          subtitle="剩余库存低于提醒数量"
           icon={<Archive size={20} />}
           tone="low"
           items={low}
-          empty="库存都很充足"
+          empty="暂无需要提醒补货的库存"
         />
       </div>
     </div>
@@ -653,7 +655,7 @@ function DashboardInventory({ items }: { items: InventoryItem[] }) {
   );
   const toggleTag = (tag: string) => setSelectedTags((current) => current.includes(tag) ? current.filter((entry) => entry !== tag) : [...current, tag]);
   return <section className="dashboard-list stock-overview">
-    <header><span className="list-title-icon"><Boxes size={19} /></span><span><h2>库存总览</h2><p>到期近的在前 · 用完的在底部</p></span><strong aria-label="批次数量">{filtered.length}</strong></header>
+    <header><span className="list-title-icon"><Boxes size={19} /></span><span><h2>库存总览</h2><p>到期近的在前 · 仅显示剩余库存</p></span><strong aria-label="批次数量">{filtered.length}</strong></header>
     <div className="overview-tags"><button onClick={() => void copyMealPrompt()}><Copy size={14} /> 复制做饭 Prompt</button><span className="overview-filter-note">蔬菜、肉类 · 3 个方案 · 每方案 2 道菜 · 少油烟</span></div>
     <details className="meal-prompt-fallback">
       <summary>添加其他食材{selectedExtras.length > 0 ? ` · 已选 ${selectedExtras.length} 项` : "（可选）"}</summary>
@@ -1631,7 +1633,7 @@ function Inventory({ items, onChangeQuantity, onSetQuantity, onEdit, onOpen, onD
           {filtered.map((item) => <InventoryRow key={item.id} item={item} onChangeQuantity={onChangeQuantity} onSetQuantity={onSetQuantity} onEdit={onEdit} onOpen={onOpen} onDelete={onDelete} />)}
         </div>
       )}
-      <p className="retention-note"><Archive size={16} /> 点击数量可以直接输入克数、毫升数或小数；归零后记录仍会保留。</p>
+      <p className="retention-note"><Archive size={16} /> 点击数量可直接输入；用完后自动隐藏，再次添加同名物品时可沿用历史信息。</p>
     </div>
   );
 }
