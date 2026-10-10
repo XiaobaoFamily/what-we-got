@@ -59,7 +59,6 @@ import { effectiveExpiry, productTotals, sortBatches, recentNamedItems, previous
 
 const DEFAULT_TAGS = [
   "小宝",
-  "新鲜食物",
   "蔬菜",
   "瓜果",
   "肉类",
