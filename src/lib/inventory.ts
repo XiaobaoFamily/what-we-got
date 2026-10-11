@@ -13,6 +13,7 @@ export function previousShelfLifeDays(items: InventoryItem[], name: string, zone
   const matches = items.filter((item) => item.name.trim().toLocaleLowerCase() === name.trim().toLocaleLowerCase() && item.storage_zone === zone)
     .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id));
   for (const item of matches) {
+    if (item.template_shelf_life_days != null) return item.template_shelf_life_days;
     if (!item.purchased_on || !item.expires_on) continue;
     const days = (Date.parse(`${item.expires_on}T00:00:00Z`) - Date.parse(`${item.purchased_on}T00:00:00Z`)) / 86400000;
     if (Number.isInteger(days) && days >= 0) return days;

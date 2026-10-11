@@ -391,7 +391,7 @@ function HouseholdSetup({ client, onComplete, onDisconnect }: { client: Supabase
 function InventoryApp({ client, household, email, onDisconnect }: { client: SupabaseClient; household: Household; email: string; onDisconnect: () => void }) {
   const [tab, setTab] = useState<Tab>("dashboard");
   const [items, setItems] = useState<InventoryItem[]>([]);
-  // Keep depleted batches available to AddInventory as reusable history.
+  // Zero-quantity template snapshots are only used by the add form.
   const stockedItems = items.filter((item) => Number(item.quantity) > 0);
   const [ruleOverrides, setRuleOverrides] = useState<HouseholdShelfLifeRule[]>([]);
   const [rulesLoading, setRulesLoading] = useState(true);
@@ -405,15 +405,28 @@ function InventoryApp({ client, household, email, onDisconnect }: { client: Supa
   const [shoppingCandidate, setShoppingCandidate] = useState<InventoryItem | null>(null);
 
   const loadItems = useCallback(async () => {
-    const { data, error: queryError } = await client
+    const [batches, templates] = await Promise.all([client
       .from("inventory_items")
       .select("*")
       .eq("household_id", household.id)
       .order("expires_on", { ascending: true, nullsFirst: false })
-      .order("name", { ascending: true });
+      .order("name", { ascending: true }),
+      client.from("inventory_templates").select("*").eq("household_id", household.id)
+    ]);
     setLoading(false);
-    if (queryError) setError(queryError.message);
-    else setItems(sortBatches((data ?? []) as InventoryItem[]));
+    if (batches.error || templates.error) {
+      setError(templates.error ? `无法读取添加模板，请确认已执行 202610100001_inventory_templates.sql。${templates.error.message}` : batches.error!.message);
+    } else {
+      setError("");
+      const references: InventoryItem[] = (templates.data ?? []).map((template) => ({
+        ...template.snapshot,
+        id: `template:${template.id}`,
+        quantity: 0,
+        created_at: template.learned_at,
+        template_shelf_life_days: template.shelf_life_days
+      }));
+      setItems(sortBatches([...(batches.data ?? []) as InventoryItem[], ...references]));
+    }
   }, [client, household.id]);
 
   const loadRuleOverrides = useCallback(async () => {
@@ -437,6 +450,7 @@ function InventoryApp({ client, household, email, onDisconnect }: { client: Supa
     const channel = client
       .channel(`inventory-${household.id}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "inventory_items", filter: `household_id=eq.${household.id}` }, () => void loadItems())
+      .on("postgres_changes", { event: "*", schema: "public", table: "inventory_templates", filter: `household_id=eq.${household.id}` }, () => void loadItems())
       .subscribe();
     return () => { void client.removeChannel(channel); };
   }, [client, household.id, loadItems]);
@@ -470,6 +484,7 @@ function InventoryApp({ client, household, email, onDisconnect }: { client: Supa
       void loadItems();
     } else if (savedQuantity !== null) {
       setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, quantity: Number(savedQuantity) } : entry));
+      if (Number(savedQuantity) === 0) void loadItems();
     }
   }
 
@@ -480,11 +495,11 @@ function InventoryApp({ client, household, email, onDisconnect }: { client: Supa
     if (updateError) {
       setToast("没能更新数量，请重试");
       void loadItems();
-    }
+    } else if (next === 0) void loadItems();
   }
 
   async function deleteItem(item: InventoryItem) {
-    if (!window.confirm(`确认删除「${item.name}」？库存为 0 时不用删除，它会自动保留。`)) return;
+    if (!window.confirm(`确认删除「${item.name}」这一批？如果是已用完，请将数量设为 0，以保留添加模板。`)) return;
     const { error: deleteError } = await client.from("inventory_items").delete().eq("id", item.id);
     if (deleteError) setToast("删除失败，请重试");
     else {

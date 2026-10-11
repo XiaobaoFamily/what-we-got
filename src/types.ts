@@ -13,6 +13,7 @@ export interface Household {
 }
 
 export interface InventoryItem {
+  template_shelf_life_days?: number | null;
   id: string;
   product_id: string;
   opened_on: string | null;

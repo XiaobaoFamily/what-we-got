@@ -25,6 +25,12 @@ test("historical shelf life uses valid purchase-to-expiry days in the same stora
   assert.equal(previousShelfLifeDays([batch({ storage_zone: "chilled", purchased_on: "2026-10-02", expires_on: "2026-10-01" })], "牛奶", "chilled"), null);
 });
 
+test("templates preserve learned shelf life after the last batch had no dates", () => {
+  const template = batch({ quantity: 0, storage_zone: "chilled", purchased_on: null, expires_on: null, template_shelf_life_days: 7 });
+  assert.equal(previousShelfLifeDays([template], "牛奶", "chilled"), 7);
+  assert.equal(previousShelfLifeDays([template], "牛奶", "frozen"), null);
+});
+
 test("opening never extends the packaging deadline", () => {
   assert.equal(effectiveExpiry(batch({ expires_on: "2026-10-03", opened_on: "2026-10-01", opened_days: 5 })), "2026-10-03");
   assert.equal(effectiveExpiry(batch({ expires_on: "2026-10-20", opened_on: "2026-10-01", opened_days: 5 })), "2026-10-06");
