@@ -21,6 +21,23 @@ export function previousShelfLifeDays(items: InventoryItem[], name: string, zone
   return null;
 }
 
+export function restockSuggestions(items: InventoryItem[]): InventoryItem[] {
+  const groups = new Map<string, InventoryItem[]>();
+  for (const item of items) {
+    const key = JSON.stringify([item.name.trim().toLocaleLowerCase(), item.unit]);
+    groups.set(key, [...(groups.get(key) ?? []), item]);
+  }
+  const suggestions: InventoryItem[] = [];
+  for (const group of groups.values()) {
+    const active = group.filter((item) => Number(item.quantity) > 0);
+    // Current stock settings take priority over old template snapshots.
+    const source = [...(active.length ? active : group)].sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id))[0];
+    const quantity = active.reduce((sum, item) => sum + Number(item.quantity), 0);
+    if (source.low_stock_enabled !== false && quantity <= Number(source.low_stock_threshold)) suggestions.push({ ...source, quantity });
+  }
+  return suggestions.sort((a, b) => Number(a.quantity > 0) - Number(b.quantity > 0) || a.name.localeCompare(b.name, "zh-CN"));
+}
+
 export function effectiveExpiry(item: InventoryItem): string | null {
   if (!item.opened_on || item.opened_days == null) return item.expires_on;
   const date = new Date(`${item.opened_on}T12:00:00`);

@@ -1,11 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { effectiveExpiry, productTotals, sortBatches, recentNamedItems, previousShelfLifeDays } from "../src/lib/inventory.ts";
+import { effectiveExpiry, productTotals, sortBatches, recentNamedItems, previousShelfLifeDays, restockSuggestions } from "../src/lib/inventory.ts";
 
 const batch = (overrides = {}) => ({
   id: "one", product_id: "milk", name: "牛奶", unit: "盒", quantity: 1,
   expires_on: null, opened_on: null, opened_days: null,
   created_at: "2026-09-01T00:00:00Z", ...overrides
+});
+
+test("restock suggestions combine stock across zones, include depleted templates and respect units/settings", () => {
+  const template = batch({ id: "template:milk", quantity: 0, low_stock_enabled: true, low_stock_threshold: 1 });
+  const anotherZone = { ...template, id: "template:frozen", storage_zone: "frozen" };
+  assert.equal(restockSuggestions([template, anotherZone]).length, 1);
+  assert.equal(restockSuggestions([template, batch({ quantity: 2, low_stock_threshold: 1 })]).length, 0);
+  assert.equal(restockSuggestions([template, batch({ quantity: 1, low_stock_enabled: false, low_stock_threshold: 2 })]).length, 0);
+  assert.equal(restockSuggestions([{ ...template, low_stock_enabled: false }]).length, 0);
+  const separateUnit = batch({ id: "liters", unit: "升", quantity: 3, low_stock_threshold: 1 });
+  assert.deepEqual(restockSuggestions([template, separateUnit]).map((item) => [item.unit, item.quantity]), [["盒", 0]]);
+  assert.equal(restockSuggestions([batch({ quantity: 1, low_stock_threshold: 1 }), batch({ id: "frozen", quantity: 1, storage_zone: "frozen", low_stock_threshold: 1 })]).length, 0);
 });
 
 test("name matching chooses the latest batch regardless of unit or remaining stock", () => {
