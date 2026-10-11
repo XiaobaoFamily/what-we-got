@@ -1034,6 +1034,7 @@ function ShoppingPage({ client, household, inventoryItems, shelfLifeRules, onInv
     .sort((a, b) => Number(a.checked) - Number(b.checked) || a.created_at.localeCompare(b.created_at));
   const remainingCount = activeItems.filter((item) => !item.checked).length;
   const isAlreadyListed = (name: string) => activeItems.some((item) => !item.checked && item.name.trim().toLocaleLowerCase() === name.trim().toLocaleLowerCase());
+  const otherListsContaining = (name: string) => lists.filter((list) => list.id !== selectedListId && listItems.some((item) => item.shopping_list_id === list.id && !item.checked && item.name.trim().toLocaleLowerCase() === name.trim().toLocaleLowerCase())).map((list) => list.name);
 
   async function addRestock(item: InventoryItem) {
     if (!activeList || addingSuggestion || isAlreadyListed(item.name)) return;
@@ -1193,10 +1194,12 @@ function ShoppingPage({ client, household, inventoryItems, shelfLifeRules, onInv
 
           <details className="restock-suggestions" open>
             <summary>补货建议 · {restock.length}</summary>
-            {!restock.length ? <p className="muted">暂无需要补货的物品</p> : <div>{restock.map((item) => <div className="restock-row" key={`${item.name}:${item.unit}`}>
-              <div><strong>{item.name}</strong><small>{item.quantity === 0 ? `已用完 · ${item.unit}` : `剩余 ${formatQuantity(item.quantity)} ${item.unit}`} · 提醒阈值 {formatQuantity(item.low_stock_threshold)} {item.unit}</small></div>
+            {!restock.length ? <p className="muted">暂无需要补货的物品</p> : <div>{restock.map((item) => {
+              const otherLists = otherListsContaining(item.name);
+              return <div className="restock-row" key={`${item.name}:${item.unit}`}>
+              <div><strong>{item.name}</strong><small>{item.quantity === 0 ? `已用完 · ${item.unit}` : `剩余 ${formatQuantity(item.quantity)} ${item.unit}`} · 提醒阈值 {formatQuantity(item.low_stock_threshold)} {item.unit}</small>{otherLists.length > 0 && <small>已在其他清单：{otherLists.join("、")}</small>}</div>
               <button className="batch-open-button" disabled={!activeList || addingSuggestion || isAlreadyListed(item.name)} onClick={() => void addRestock(item)}>{isAlreadyListed(item.name) ? "已在清单" : "加入当前买菜单"}</button>
-            </div>)}</div>}
+            </div>; })}</div>}
             {!activeList && restock.length > 0 && <p className="muted">先建立一个买菜单，即可加入补货物品。</p>}
           </details>
 
