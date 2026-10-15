@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { Plus, Pencil, Search, X } from "lucide-react";
 import type { CalorieEntry, Household, InventoryItem } from "./types";
-import { buildCalorieRows, type CalorieRow } from "./lib/calories";
+import { buildCalorieRows, filterCalorieRows, type CalorieRow } from "./lib/calories";
 import { calorieNameKey } from "./data/calorieReferences";
 
 export function CaloriesPage({ client, household, items, onToast }: {
@@ -12,6 +12,7 @@ export function CaloriesPage({ client, household, items, onToast }: {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [onlyBlank, setOnlyBlank] = useState(false);
   const [preparation, setPreparation] = useState<"raw" | "cooked">("raw");
   const [editing, setEditing] = useState<CalorieRow | null>(null);
@@ -29,17 +30,24 @@ export function CaloriesPage({ client, household, items, onToast }: {
     return () => { void client.removeChannel(channel); };
   }, [client, household.id, load]);
   const rows = buildCalorieRows(items, entries, preparation);
-  const filtered = rows.filter((row) => (!onlyBlank || row.kcal === null) && calorieNameKey(row.name).includes(calorieNameKey(query)));
+  const tags = [...new Set(["蔬菜", "肉类", "瓜果", "乳制品", ...rows.flatMap((row) => row.tags)])];
+  const filtered = filterCalorieRows(rows, query, selectedTags, onlyBlank);
   const format = (n: number) => Number(n).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
   return <div className="page calories-page">
-    <div className="page-heading"><div><span className="eyebrow">常用食材，随时查阅</span><h1>热量表</h1></div><button className="primary-button" disabled={loading || Boolean(error)} onClick={() => setEditing({ preparation, name: "", kcal: null, amount: 100, unit: "克", notes: "", source_url: "", origin: "blank" })}><Plus size={17} />新增食物</button></div>
+    <div className="page-heading"><div><span className="eyebrow">常用食材，随时查阅</span><h1>热量表</h1></div><button className="primary-button" disabled={loading || Boolean(error)} onClick={() => setEditing({ preparation, tags: [], name: "", kcal: null, amount: 100, unit: "克", notes: "", source_url: "", origin: "blank" })}><Plus size={17} />新增食物</button></div>
     <p className="muted">自动列出库存和模板物品；参考热量会注明食物状态和来源，包装营养标签优先。小宝、日用品标签不自动列入。</p>
     <div className="overview-tags" role="group" aria-label="生熟重量切换">{(["raw", "cooked"] as const).map((value) => <button key={value} aria-pressed={preparation === value} className={preparation === value ? "active" : ""} onClick={() => setPreparation(value)}>{value === "raw" ? "生重（默认）" : "熟重"}</button>)}</div>
     <p className="muted">{preparation === "raw" ? "按烹饪前可食部分计量。即食或包装食品可按营养标签填写，并注明状态。" : "按烹饪后可食部分计量；熟重值单独记录，无数据时留空。"}</p>
     <div className="calorie-controls"><div className="search-field"><Search size={18} /><input aria-label="搜索热量表" placeholder="搜索食物名称" value={query} onChange={(e) => setQuery(e.target.value)} /></div><label><input type="checkbox" checked={onlyBlank} onChange={(e) => setOnlyBlank(e.target.checked)} />只看待填写（{rows.filter((row) => row.kcal === null).length}）</label></div>
+    <div className="overview-tags" role="group" aria-label="热量表标签筛选">
+      <button aria-pressed={selectedTags.length === 0} className={!selectedTags.length ? "active" : ""} onClick={() => setSelectedTags([])}>全部标签</button>
+      {tags.map((tag) => <button key={tag} aria-pressed={selectedTags.includes(tag)} className={selectedTags.includes(tag) ? "active" : ""} onClick={() => setSelectedTags((current) => current.includes(tag) ? current.filter((value) => value !== tag) : [...current, tag])}>{tag}</button>)}
+      {(query || selectedTags.length || onlyBlank) ? <button onClick={() => { setQuery(""); setSelectedTags([]); setOnlyBlank(false); }}>清除筛选</button> : null}
+    </div>
+    {selectedTags.length > 1 && <p className="muted">匹配任意一个所选标签，同时满足名称及待填写筛选。</p>}
     {error ? <div className="inline-error"><span>热量表加载失败。首次使用请执行 202610150001_calorie_entries.sql。{error}</span><button onClick={() => void load()}>重试</button></div> : loading ? <p role="status">正在加载热量表…</p> : <>
       <div className="calorie-list">{filtered.map((row) => <article className="calorie-row" key={calorieNameKey(row.name)}>
-        <div className="calorie-description"><strong>{row.name}</strong><small>{row.origin === "reference" ? "资料参考值" : row.origin === "saved" ? "家庭记录" : "待填写"}</small>{row.notes && <p>{row.notes}</p>}{/^https?:\/\//i.test(row.source_url) && <a href={row.source_url} target="_blank" rel="noreferrer">查看来源</a>}</div>
+        <div className="calorie-description"><strong>{row.name}</strong><small>{row.origin === "reference" ? "资料参考值" : row.origin === "saved" ? "家庭记录" : "待填写"}{row.tags.length > 0 ? ` · ${row.tags.join("、")}` : " · 未分类"}</small>{row.notes && <p>{row.notes}</p>}{/^https?:\/\//i.test(row.source_url) && <a href={row.source_url} target="_blank" rel="noreferrer">查看来源</a>}</div>
         <div className="calorie-value"><strong>{row.kcal === null ? "—" : `${format(row.kcal)} 千卡`}</strong><small>每 {format(row.amount)} {row.unit}</small></div>
         <button className="icon-button" aria-label={`编辑${row.name}热量`} onClick={() => setEditing(row)}><Pencil size={17} /></button>
       </article>)}</div>
