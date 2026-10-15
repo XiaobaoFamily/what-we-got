@@ -1,5 +1,6 @@
 // Checked 2026-10-15. FDA values are rounded per listed edible serving.
 // Per-100g values below are estimates derived from that serving, not lab precision.
+import { FRESH_CALORIE_REFERENCES } from "./freshCalorieReferences.ts";
 export interface CalorieReference {
   preparation: "raw" | "cooked";
   names: string[];
@@ -15,14 +16,15 @@ const seafoodSource = "https://www.fda.gov/food/nutrition-food-labeling-and-crit
 type Serving = [names: string[], calories: number, grams: number];
 function fromServings(rows: Serving[], source_url: string, state: string, preparation: "raw" | "cooked" = "raw"): CalorieReference[] {
   return rows.map(([names, calories, grams]) => ({ preparation, names, kcal: Math.round(calories / grams * 100), amount: 100, unit: "克", source_url,
-    notes: `${state}，可食部分；FDA ${grams} 克约 ${calories} 千卡，换算每 100 克参考值。` }));
+    notes: `${state}、可食部分` }));
 }
 export const CALORIE_REFERENCES: CalorieReference[] = [
-  { names: ["鸡胸肉", "去皮鸡胸肉", "chicken breast"], preparation: "raw", kcal: 120, amount: 100, unit: "克", notes: "生、去皮去骨鸡胸肉；USDA FDC 171077，每 100 克可食部分。", source_url: "https://fdc.nal.usda.gov/food-details/171077/nutrients" },
-  { names: ["鸡胸肉", "去皮鸡胸肉", "chicken breast", "烤鸡胸肉"], preparation: "cooked", kcal: 165, amount: 100, unit: "克", notes: "烤熟、去皮去骨鸡胸肉；USDA FDC 171477。其他做法请按实际调整。", source_url: "https://fdc.nal.usda.gov/food-details/171477/nutrients" },
-  { names: ["鸡蛋", "egg", "eggs"], preparation: "raw", kcal: 143, amount: 100, unit: "克", notes: "生全蛋、去壳；USDA FDC 171287。大号蛋可食部分约 50 克，每个约 72 千卡。", source_url: "https://fdc.nal.usda.gov/food-details/171287/nutrients" },
-  { names: ["鸡蛋", "egg", "eggs", "水煮蛋"], preparation: "cooked", kcal: 155, amount: 100, unit: "克", notes: "水煮全蛋、去壳；USDA FDC 173424。大号蛋约 50 克，每个约 78 千卡；不适用于煎蛋。", source_url: "https://fdc.nal.usda.gov/food-details/173424/nutrients" },
-  { names: ["全脂牛奶", "whole milk"], preparation: "raw", kcal: 61, amount: 100, unit: "克", notes: "烹饪前的全脂牛奶（3.25% 乳脂、添加维生素 D），不是生乳。USDA FDC 171265。按克计，不能直接当成每 100 毫升。", source_url: "https://fdc.nal.usda.gov/food-details/171265/nutrients" },
+  ...FRESH_CALORIE_REFERENCES,
+  { names: ["鸡胸肉", "去皮鸡胸肉", "chicken breast"], preparation: "raw", kcal: 120, amount: 100, unit: "克", notes: "生、去皮去骨", source_url: "https://fdc.nal.usda.gov/food-details/171077/nutrients" },
+  { names: ["鸡胸肉", "去皮鸡胸肉", "chicken breast", "烤鸡胸肉"], preparation: "cooked", kcal: 165, amount: 100, unit: "克", notes: "烤熟、去皮去骨", source_url: "https://fdc.nal.usda.gov/food-details/171477/nutrients" },
+  { names: ["鸡蛋", "egg", "eggs"], preparation: "raw", kcal: 143, amount: 100, unit: "克", notes: "生全蛋、去壳", source_url: "https://fdc.nal.usda.gov/food-details/171287/nutrients" },
+  { names: ["鸡蛋", "egg", "eggs", "水煮蛋"], preparation: "cooked", kcal: 155, amount: 100, unit: "克", notes: "水煮、去壳", source_url: "https://fdc.nal.usda.gov/food-details/173424/nutrients" },
+  { names: ["全脂牛奶", "whole milk"], preparation: "raw", kcal: 61, amount: 100, unit: "克", notes: "烹饪前、全脂 3.25% 乳脂", source_url: "https://fdc.nal.usda.gov/food-details/171265/nutrients" },
   ...fromServings([
     [["芦笋", "asparagus"],20,93], [["甜椒", "彩椒", "bell pepper"],25,148],
     [["西兰花", "绿花椰菜", "broccoli"],45,148], [["胡萝卜", "红萝卜", "carrot"],30,78],

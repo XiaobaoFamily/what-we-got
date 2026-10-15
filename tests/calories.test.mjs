@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildCalorieRows, filterCalorieRows } from "../src/lib/calories.ts";
+import { buildCalorieRows, filterCalorieRows, shortCalorieState } from "../src/lib/calories.ts";
 import { findCalorieReference } from "../src/data/calorieReferences.ts";
 
 test("raw is default; cooked values are independent, not converted", () => {
@@ -28,6 +28,22 @@ test("table deduplicates templates and stock; missing values stay null; manual b
 test("FDA serving conversion does not confuse a serving with 100 grams", () => {
   assert.equal(findCalorieReference("西兰花").kcal, Math.round(45 / 148 * 100));
   assert.equal(findCalorieReference("全脂牛奶").unit, "克");
+});
+
+test("actual household fresh names match their food state without filling branded or processed mixtures", () => {
+  for (const name of ["白菜", "白萝卜", "豆腐", "豆苗", "豆芽", "海鲈鱼", "蚝菇", "红辣椒", "鸡肉", "姜", "芥蓝", "金针菇", "韭菜", "梅花肉（整块）", "牛肋条", "牛肉", "牛肉馅", "上海青", "丝瓜", "杏鲍菇", "雪里蕻", "鱿鱼", "猪梅花肉", "猪肉丝", "猪肉馅", "猪五花"]) {
+    assert.ok(findCalorieReference(name, "raw"), name);
+  }
+  assert.equal(findCalorieReference("豆芽").kcal, 30, "mung sprouts are not dry mung beans");
+  assert.equal(findCalorieReference("鱿鱼").kcal, 92);
+  assert.equal(findCalorieReference("鱿鱼", "cooked"), undefined, "do not substitute a fried-squid value");
+  for (const name of ["关东煮食材", "虾滑", "缺德舅海鲜包", "Costco鸡胸肉", "糯米笋", "台湾香肠", "干豆腐皮"]) assert.equal(findCalorieReference(name), undefined, name);
+});
+
+test("legacy provenance is omitted from state labels and empty states use the selected mode", () => {
+  assert.equal(shortCalorieState("生、去皮；USDA FDC 171077。详细备注", "raw"), "生、去皮");
+  assert.equal(shortCalorieState("水煮、沥干", "cooked"), "水煮、沥干");
+  assert.equal(shortCalorieState("", "cooked"), "熟重 / 烹饪后");
 });
 
 test("calorie filters combine name and any selected tag, retaining tags across saved values and raw/cooked", () => {

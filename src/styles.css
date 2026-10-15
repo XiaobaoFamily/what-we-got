@@ -646,7 +646,5 @@ h1, h2, p { margin-top: 0; }
 .calorie-description { min-width: 0; overflow-wrap: anywhere; }
 .calorie-description > strong { font-size: .9rem; }
 .calorie-row small { display: block; color: var(--muted); font-size: .72rem; margin-top: 3px; }
-.calorie-description p { margin: 4px 0; color: var(--muted); font-size: .74rem; line-height: 1.5; }
-.calorie-description a { font-size: .72rem; color: var(--green); }
 .calorie-value { text-align: right; }
 .calorie-value strong { font-size: .85rem; white-space: nowrap; }

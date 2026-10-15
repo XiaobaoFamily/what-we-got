@@ -2,6 +2,12 @@ import { calorieNameKey, findCalorieReference } from "../data/calorieReferences.
 import type { CalorieEntry, InventoryItem } from "../types";
 
 export type CalorieRow = Omit<CalorieEntry, "id" | "household_id"> & { id?: string; tags: string[]; origin: "saved" | "reference" | "blank" };
+
+export function shortCalorieState(notes: string, preparation: "raw" | "cooked"): string {
+  // Old saved entries can contain full provenance paragraphs; keep that data but
+  // only show the leading food-state description in the compact table.
+  return notes.split(/[；;。\n]/)[0].trim().slice(0, 45) || (preparation === "raw" ? "生重 / 烹饪前" : "熟重 / 烹饪后");
+}
 export function buildCalorieRows(items: InventoryItem[], saved: CalorieEntry[], preparation: "raw" | "cooked" = "raw"): CalorieRow[] {
   const rows = new Map<string, CalorieRow>();
   const tagsByName = new Map<string, string[]>();
