@@ -1,5 +1,17 @@
 export type StorageZone = "pantry" | "chilled" | "frozen";
 
+export interface CalorieEntry {
+  preparation: "raw" | "cooked";
+  id: string;
+  household_id: string;
+  name: string;
+  kcal: number | null;
+  amount: number;
+  unit: string;
+  notes: string;
+  source_url: string;
+}
+
 export interface SupabaseConfig {
   url: string;
   anonKey: string;

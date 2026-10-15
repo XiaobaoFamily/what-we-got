@@ -30,6 +30,20 @@ pnpm dev
 
 ## 当前数据模型
 
+### 热量表
+
+先在 Supabase SQL Editor 执行 `202610150001_calorie_entries.sql`，再部署前端。热量记录独立保存在 `calorie_entries`，按家庭、名称、生熟状态唯一；家庭成员可新增和修改，不改动库存数量、模板或保质期。
+
+“热量表”自动列出已有库存和添加模板里的物品（同名只显示一项，排除小宝、日用品标签），也支持独立新增食物。默认按生重显示，可切换熟重；两种状态分别填写和保存。热量单位为千卡（kcal），基准份量可填写 100 克、100 毫升、1 个、1 份等。未知值留空，0 千卡是有效数值；主动清空会覆盖参考值，不会重新自动填回。
+
+内置参考库位于 `src/data/calorieReferences.ts`，2026-10-15 查证，共 50 条食物/状态参考记录（含别名）。精确匹配名称和状态，不对品牌、加工方式做模糊推断；未覆盖的名称留空，不能把生熟值或克/毫升直接互换。用户保存的值优先于参考值。App 运行时不调用营养 API，也不使用 AI/API 密钥；当前本地没有家庭 Supabase 模板名称清单，故尚未对家庭实际全部名称逐项查询，需在打开 App 后查看匹配结果。
+
+参考来源（每条记录包含可点击来源及状态说明）：
+
+- [FDA 生蔬菜](https://www.fda.gov/food/nutrition-food-labeling-and-critical-foods/nutrition-information-raw-vegetables)、[FDA 生水果](https://www.fda.gov/food/nutrition-food-labeling-and-critical-foods/raw-fruits-poster-text-version-accessible-version)：按原表可食份量换算每 100 克并取整，属于估算参考值。
+- [FDA 熟海鲜](https://www.fda.gov/food/nutrition-food-labeling-and-critical-foods/nutrition-information-cooked-seafood-purchased-raw)：未加配料、按熟重计，原表 84 克换算每 100 克。
+- USDA FoodData Central：生去皮去骨鸡胸肉 171077、烤熟鸡胸肉 171477、生全蛋 171287、水煮全蛋 173424、全脂牛奶 171265。牛奶以克计，不等同于毫升；具体品牌仍以包装为准。
+
 添加模板功能需先在 Supabase SQL Editor 执行 `202610100001_inventory_templates.sql`，再部署前端。迁移会将已耗尽批次归并为每个家庭、同名物品、同储存条件的一条模板（不按单位拆分），随后删除数量为 0 的原始批次；旧批次完整历史不再保留，若需要可先导出 `inventory_items`。数量大于 0 的批次不会删除。
 
 旧记录没有用完时间，首次迁移按 `updated_at` 选取最近的模板，保质期时长取最近创建且日期有效的同名同储存条件记录。此后每次归零都会在同一事务里更新模板并删除耗尽批次，以实际归零时间更新 `learned_at`；新批次没有有效日期时保留模板已有时长。模板用于再次添加时复用信息，不参与库存数量或提醒。保质期时长为购买日到包装到期日，不使用开封后的缩短期限。

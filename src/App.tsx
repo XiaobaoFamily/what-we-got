@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { CaloriesPage } from "./CaloriesPage";
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import {
   Archive,
@@ -6,6 +7,7 @@ import {
   Boxes,
   CalendarDays,
   Cat,
+  Flame,
   Check,
   ChevronRight,
   CircleAlert,
@@ -81,7 +83,7 @@ const ZONES: Array<{ key: StorageZone; label: string; icon: typeof Archive; colo
   { key: "frozen", label: "冷冻", icon: Snowflake, color: "indigo" }
 ];
 
-type Tab = "dashboard" | "add" | "inventory" | "shopping" | "rules";
+type Tab = "dashboard" | "add" | "inventory" | "shopping" | "calories" | "rules";
 
 function App() {
   const [config, setConfig] = useState<SupabaseConfig | null>(() => loadSupabaseConfig());
@@ -512,6 +514,7 @@ function InventoryApp({ client, household, email, onDisconnect }: { client: Supa
     { id: "add", label: "添加", icon: PackagePlus },
     { id: "inventory", label: "库存", icon: Boxes },
     { id: "shopping", label: "买菜单", icon: ShoppingBasket },
+    { id: "calories", label: "热量表", icon: Flame },
     { id: "rules", label: "规则", icon: BookOpenText }
   ];
 
@@ -547,6 +550,8 @@ function InventoryApp({ client, household, email, onDisconnect }: { client: Supa
             }}
             onToast={setToast}
           />
+        ) : tab === "calories" ? (
+          <CaloriesPage client={client} household={household} items={items} onToast={setToast} />
         ) : (
           <RulesManager
             client={client}
