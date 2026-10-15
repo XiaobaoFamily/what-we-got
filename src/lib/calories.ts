@@ -3,6 +3,12 @@ import type { CalorieEntry, InventoryItem } from "../types";
 
 export type CalorieRow = Omit<CalorieEntry, "id" | "household_id"> & { id?: string; tags: string[]; origin: "saved" | "reference" | "blank" };
 
+export const CALORIE_TAG_ORDER = ["蔬菜", "肉类", "乳制品", "瓜果", "主食", "调味料", "预制菜", "饮料", "零食", "烘焙"];
+function categoryRank(row: CalorieRow): number {
+  const rank = CALORIE_TAG_ORDER.findIndex((tag) => row.tags.includes(tag));
+  return rank === -1 ? CALORIE_TAG_ORDER.length : rank;
+}
+
 export function shortCalorieState(notes: string, preparation: "raw" | "cooked"): string {
   // Old saved entries can contain full provenance paragraphs; keep that data but
   // only show the leading food-state description in the compact table.
@@ -25,7 +31,9 @@ export function buildCalorieRows(items: InventoryItem[], saved: CalorieEntry[], 
       unit: reference?.unit ?? "克", notes: reference?.notes ?? "", source_url: reference?.source_url ?? "", origin: reference ? "reference" : "blank" });
   }
   for (const entry of saved.filter((entry) => entry.preparation === preparation)) rows.set(calorieNameKey(entry.name), { ...entry, tags: tagsByName.get(calorieNameKey(entry.name)) ?? [], origin: "saved" });
-  return [...rows.values()].sort((a, b) => Number(a.kcal !== null) - Number(b.kcal !== null) || a.name.localeCompare(b.name, "zh-CN"));
+  return [...rows.values()].sort((a, b) => Number(a.kcal === null) - Number(b.kcal === null)
+    || categoryRank(a) - categoryRank(b)
+    || a.name.localeCompare(b.name, "zh-CN"));
 }
 
 export function filterCalorieRows(rows: CalorieRow[], query: string, tags: string[], onlyBlank: boolean): CalorieRow[] {

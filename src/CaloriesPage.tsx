@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { Plus, Pencil, Search, X } from "lucide-react";
 import type { CalorieEntry, Household, InventoryItem } from "./types";
-import { buildCalorieRows, filterCalorieRows, shortCalorieState, type CalorieRow } from "./lib/calories";
+import { buildCalorieRows, filterCalorieRows, shortCalorieState, CALORIE_TAG_ORDER, type CalorieRow } from "./lib/calories";
 import { calorieNameKey } from "./data/calorieReferences";
 
 export function CaloriesPage({ client, household, items, onToast }: {
@@ -30,7 +30,8 @@ export function CaloriesPage({ client, household, items, onToast }: {
     return () => { void client.removeChannel(channel); };
   }, [client, household.id, load]);
   const rows = buildCalorieRows(items, entries, preparation);
-  const tags = [...new Set(["蔬菜", "肉类", "瓜果", "乳制品", ...rows.flatMap((row) => row.tags)])];
+  const availableTags = new Set(rows.flatMap((row) => row.tags));
+  const tags = [...new Set([...CALORIE_TAG_ORDER.filter((tag, index) => index < 4 || availableTags.has(tag)), ...availableTags])];
   const filtered = filterCalorieRows(rows, query, selectedTags, onlyBlank);
   const format = (n: number) => Number(n).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
   return <div className="page calories-page">
